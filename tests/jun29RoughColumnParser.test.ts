@@ -144,6 +144,9 @@ const rows = result.rentals.map((rental) => ({
 
 assert.equal(result.rentals.length, 12);
 assert.deepEqual(result.skippedLines, []);
+assert.equal(result.validation.totalRentals, 12);
+assert.equal(result.validation.incompleteRentals, 0);
+assert.deepEqual(result.validation.issues, []);
 
 [
   ["CP - Diamond #1 (Softball)", "6:00 PM", "8:00 PM"],

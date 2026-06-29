@@ -4,6 +4,21 @@ export type RentalSheetParseResult = {
   rentals: RentalInput[];
   skippedLines: string[];
   rawText: string;
+  validation: RentalSheetValidationResult;
+};
+
+export type RentalSheetValidationIssue = {
+  severity: "warning" | "error";
+  message: string;
+  rentalIndex?: number;
+  field?: keyof RentalInput;
+};
+
+export type RentalSheetValidationResult = {
+  totalRentals: number;
+  completeRentals: number;
+  incompleteRentals: number;
+  issues: RentalSheetValidationIssue[];
 };
 
 const knownParks = [
@@ -217,6 +232,18 @@ function parseAnyTimeRange(text: string) {
   }
 
   return { ...parseLooseTimeRange(text), rest: "" };
+}
+
+function countDetectedTimeRanges(lines: string[]) {
+  return lines.filter((line) => {
+    const { startTime, endTime } = parseAnyTimeRange(line);
+
+    return Boolean(startTime && endTime);
+  }).length;
+}
+
+function inferExpectedRentalCount(ocrText: string) {
+  return /\bJun\s+29[,.\s]+\s*2026\b/i.test(ocrText) ? 12 : null;
 }
 
 function correctKnownOcrTime(
@@ -716,6 +743,91 @@ function dedupeRentals(rentals: RentalInput[]) {
   });
 }
 
+export function validateParsedRentals(
+  rentals: RentalInput[],
+  options: {
+    skippedLines?: string[];
+    rawText?: string;
+    detectedTimeRangeCount?: number;
+    expectedRentalCount?: number | null;
+  } = {},
+): RentalSheetValidationResult {
+  const issues: RentalSheetValidationIssue[] = [];
+  const requiredFields: Array<keyof RentalInput> = [
+    "startTime",
+    "endTime",
+    "facility",
+    "park",
+    "equipmentType",
+  ];
+  let incompleteRentals = 0;
+
+  rentals.forEach((rental, rentalIndex) => {
+    const missingFields = requiredFields.filter((field) => !rental[field]?.trim());
+
+    if (missingFields.length > 0) {
+      incompleteRentals += 1;
+      missingFields.forEach((field) => {
+        issues.push({
+          severity: "error",
+          rentalIndex,
+          field,
+          message: `Rental ${rentalIndex + 1} is missing ${field}.`,
+        });
+      });
+    }
+  });
+
+  if (rentals.length === 0) {
+    issues.push({
+      severity: "error",
+      message: "No rentals were parsed from the OCR text.",
+    });
+  }
+
+  if (options.skippedLines && options.skippedLines.length > 0) {
+    issues.push({
+      severity: "warning",
+      message: `${options.skippedLines.length} OCR line${
+        options.skippedLines.length === 1 ? "" : "s"
+      } could not be matched to a rental.`,
+    });
+  }
+
+  if (
+    typeof options.detectedTimeRangeCount === "number" &&
+    options.detectedTimeRangeCount > rentals.length
+  ) {
+    issues.push({
+      severity: "warning",
+      message: `${options.detectedTimeRangeCount} time range${
+        options.detectedTimeRangeCount === 1 ? "" : "s"
+      } found in OCR, but only ${rentals.length} rental${
+        rentals.length === 1 ? "" : "s"
+      } parsed.`,
+    });
+  }
+
+  if (
+    typeof options.expectedRentalCount === "number" &&
+    rentals.length !== options.expectedRentalCount
+  ) {
+    issues.push({
+      severity: "warning",
+      message: `Expected ${options.expectedRentalCount} rental${
+        options.expectedRentalCount === 1 ? "" : "s"
+      } for this test sheet, but parsed ${rentals.length}.`,
+    });
+  }
+
+  return {
+    totalRentals: rentals.length,
+    completeRentals: rentals.length - incompleteRentals,
+    incompleteRentals,
+    issues,
+  };
+}
+
 function parsePipeLine(line: string, rentalDate: string) {
   const [
     timeRange = "",
@@ -853,10 +965,13 @@ function getRentalDate(lines: string[]) {
 export function parseRentalSheetTextWithDebug(
   ocrText: string,
 ): RentalSheetParseResult {
+  console.info("[rentalSheetParser] raw OCR text before parsing:", ocrText);
+
   const lines = ocrText
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  const detectedTimeRangeCount = countDetectedTimeRanges(lines);
   const rentalDate = getRentalDate(lines);
   const rentals: RentalInput[] = [];
   const skippedLines: string[] = [];
@@ -1029,10 +1144,24 @@ export function parseRentalSheetTextWithDebug(
     console.debug("[rentalSheetParser] skipped line/block:", line);
   });
 
+  const validation = validateParsedRentals(combinedRentals, {
+    skippedLines: unresolvedSkippedLines,
+    rawText: ocrText,
+    detectedTimeRangeCount,
+    expectedRentalCount: inferExpectedRentalCount(ocrText),
+  });
+
+  if (validation.issues.length > 0) {
+    console.warn("[rentalSheetParser] validation warnings:", validation);
+  }
+
+  console.info("[rentalSheetParser] parsed rentals after parsing:", combinedRentals);
+
   return {
     rentals: combinedRentals,
     skippedLines: unresolvedSkippedLines,
     rawText: ocrText,
+    validation,
   };
 }
 

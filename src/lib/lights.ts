@@ -4,6 +4,7 @@ import { minutesToTime, timeToMinutes } from "./time";
 
 const lightStartTime = "8:30 PM";
 const lightStartMinutes = timeToMinutes(lightStartTime);
+const latestLightOnMinutes = timeToMinutes("8:55 PM");
 
 const lightCapableFacilities = [
   "HBP - Diamond #1",
@@ -29,6 +30,12 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
         timeToMinutes(rental.endTime) > lightStartMinutes,
     )
     .sort((a, b) => {
+      const endTimeDifference = timeToMinutes(a.endTime) - timeToMinutes(b.endTime);
+
+      if (endTimeDifference !== 0) {
+        return endTimeDifference;
+      }
+
       const parkCompare = a.park.localeCompare(b.park);
 
       if (parkCompare !== 0) {
@@ -39,7 +46,20 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
     });
 
   let previousPark = "";
-  let scheduledOnMinutes = lightStartMinutes;
+  let cumulativeRouteMinutes = 0;
+  const routeOffsets = lightRentals.map((rental) => {
+    if (previousPark !== "") {
+      cumulativeRouteMinutes += rental.park === previousPark ? 5 : 15;
+    }
+
+    previousPark = rental.park;
+
+    return cumulativeRouteMinutes;
+  });
+  const scheduledStartMinutes = Math.min(
+    lightStartMinutes,
+    latestLightOnMinutes - cumulativeRouteMinutes,
+  );
 
   return lightRentals
     .map((rental) => ({
@@ -53,16 +73,16 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
       scheduledOnTime: "",
       scheduledOffTime: rental.endTime,
     }))
-    .map((task, index) => {
-      if (index > 0) {
-        scheduledOnMinutes += task.park === previousPark ? 5 : 15;
+    .flatMap((task, index) => {
+      const scheduledOnMinutes = scheduledStartMinutes + routeOffsets[index];
+
+      if (scheduledOnMinutes >= timeToMinutes(task.scheduledOffTime)) {
+        return [];
       }
 
-      previousPark = task.park;
-
-      return {
+      return [{
         ...task,
         scheduledOnTime: minutesToTime(scheduledOnMinutes),
-      };
+      }];
     });
 }

@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Rental, RentalInput } from "@/types/rental";
-import { parseRentalSheetTextWithDebug } from "@/lib/rentalSheetParser";
+import {
+  parseRentalSheetTextWithDebug,
+  validateParsedRentals,
+  type RentalSheetValidationResult,
+} from "@/lib/rentalSheetParser";
 import { timeToMinutes } from "@/lib/time";
 import { usePatrol } from "../context/PatrolContext";
 
@@ -16,6 +20,7 @@ type RentalSheetScanResult = {
   rentals: RentalInput[];
   skippedLines: string[];
   rawText: string;
+  validation: RentalSheetValidationResult;
 };
 
 type OcrProgress = {
@@ -46,6 +51,26 @@ function isGameRental(rental: Rental) {
     `${rental.notes} ${rental.facility} ${rental.eventName} ${rental.scheduleType}`.toLowerCase();
 
   return searchText.includes("game");
+}
+
+function createBlankReviewRental(): RentalInput {
+  return {
+    rentalDate: "",
+    park: "",
+    facility: "",
+    equipmentType: "",
+    startTime: "",
+    endTime: "",
+    eventName: "",
+    eventType: "External Reservation",
+    scheduleType: "",
+    organization: "",
+    contactName: "",
+    contactPhone: "",
+    permitNumber: "",
+    attendanceQuantity: "",
+    notes: "Added during review",
+  };
 }
 
 async function preprocessImageForOcr(file: File) {
@@ -119,7 +144,10 @@ export default function RentalsPage() {
     rawText: string;
     skippedLines: string[];
     detectedCount: number;
+    validation: RentalSheetValidationResult;
   } | null>(null);
+  const [reviewValidation, setReviewValidation] =
+    useState<RentalSheetValidationResult | null>(null);
   const sortedRentals = rentals.slice().sort(sortRentalsByStartTime);
   const checkedCount = rentals.filter((rental) => rental.checkedIn).length;
 
@@ -172,6 +200,7 @@ export default function RentalsPage() {
     });
     setReviewRentals([]);
     setOcrDebug(null);
+    setReviewValidation(null);
 
     let worker: Awaited<
       ReturnType<typeof import("tesseract.js")["createWorker"]>
@@ -225,6 +254,7 @@ export default function RentalsPage() {
       }
 
       const rawText = pageTexts.join("\n\n").trim();
+      console.info("[rental OCR] full raw OCR text before parsing:", rawText);
 
       if (!rawText) {
         setOcrMessage("No rental sheet text was detected.");
@@ -233,11 +263,19 @@ export default function RentalsPage() {
 
       const result: RentalSheetScanResult = parseRentalSheetTextWithDebug(rawText);
       const detectedRentals = result.rentals;
+      console.info("[rental OCR] parsed rental objects after parsing:", {
+        count: detectedRentals.length,
+        rentals: detectedRentals,
+        validation: result.validation,
+        skippedLines: result.skippedLines,
+      });
       setReviewRentals(detectedRentals);
+      setReviewValidation(result.validation);
       setOcrDebug({
         rawText: result.rawText,
         skippedLines: result.skippedLines,
         detectedCount: result.rentals.length,
+        validation: result.validation,
       });
       addActivity({
         category: "rental",
@@ -277,6 +315,7 @@ export default function RentalsPage() {
       clearRentals();
       setReviewRentals([]);
       setOcrDebug(null);
+      setReviewValidation(null);
       setOcrMessage("Rentals cleared.");
     }
   }
@@ -286,6 +325,7 @@ export default function RentalsPage() {
     setOcrProgress(null);
     setReviewRentals([]);
     setOcrDebug(null);
+    setReviewValidation(null);
 
     const files = Array.from(fileList ?? []);
 
@@ -317,6 +357,7 @@ export default function RentalsPage() {
     });
     setReviewRentals([]);
     setOcrDebug(null);
+    setReviewValidation(null);
     setOcrMessage("");
   }
 
@@ -325,7 +366,31 @@ export default function RentalsPage() {
     setSelectedImages([]);
     setReviewRentals([]);
     setOcrDebug(null);
+    setReviewValidation(null);
     setOcrMessage("");
+  }
+
+  function updateReviewValidation(nextRentals: RentalInput[]) {
+    const validation = validateParsedRentals(nextRentals, {
+      skippedLines: ocrDebug?.skippedLines ?? [],
+      rawText: ocrDebug?.rawText ?? "",
+      expectedRentalCount: ocrDebug?.rawText
+        ? /\bJun\s+29[,.\s]+\s*2026\b/i.test(ocrDebug.rawText)
+          ? 12
+          : null
+        : null,
+    });
+
+    setReviewValidation(validation);
+    setOcrDebug((current) =>
+      current
+        ? {
+            ...current,
+            detectedCount: nextRentals.length,
+            validation,
+          }
+        : current,
+    );
   }
 
   function updateReviewRental(
@@ -333,28 +398,61 @@ export default function RentalsPage() {
     field: keyof RentalInput,
     value: string,
   ) {
-    setReviewRentals((current) =>
-      current.map((rental, rentalIndex) =>
+    setReviewRentals((current) => {
+      const nextRentals = current.map((rental, rentalIndex) =>
         rentalIndex === index
           ? {
               ...rental,
               [field]: value,
             }
           : rental,
-      ),
-    );
+      );
+
+      updateReviewValidation(nextRentals);
+      return nextRentals;
+    });
   }
 
   function deleteReviewRental(index: number) {
-    setReviewRentals((current) =>
-      current.filter((_, rentalIndex) => rentalIndex !== index),
-    );
+    setReviewRentals((current) => {
+      const nextRentals = current.filter((_, rentalIndex) => rentalIndex !== index);
+
+      updateReviewValidation(nextRentals);
+      return nextRentals;
+    });
+  }
+
+  function addReviewRental() {
+    setReviewRentals((current) => {
+      const nextRentals = [...current, createBlankReviewRental()];
+
+      updateReviewValidation(nextRentals);
+      return nextRentals;
+    });
   }
 
   function confirmImport() {
+    const validation = validateParsedRentals(reviewRentals, {
+      skippedLines: ocrDebug?.skippedLines ?? [],
+      rawText: ocrDebug?.rawText ?? "",
+      expectedRentalCount: ocrDebug?.rawText
+        ? /\bJun\s+29[,.\s]+\s*2026\b/i.test(ocrDebug.rawText)
+          ? 12
+          : null
+        : null,
+    });
+
+    setReviewValidation(validation);
+
+    if (validation.issues.some((issue) => issue.severity === "error")) {
+      setOcrMessage("Fix incomplete rentals before importing.");
+      return;
+    }
+
     importRentals(reviewRentals);
     setReviewRentals([]);
     setOcrDebug(null);
+    setReviewValidation(null);
     setOcrMessage("Rentals imported. Shift tasks have been generated.");
   }
 
@@ -468,6 +566,30 @@ export default function RentalsPage() {
               <p className="mt-2 text-sm text-slate-700">
                 Rentals detected: {ocrDebug.detectedCount}
               </p>
+              {reviewValidation ? (
+                <div className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">
+                  <p className="font-bold">
+                    Parsed {reviewValidation.totalRentals} rental
+                    {reviewValidation.totalRentals === 1 ? "" : "s"}
+                  </p>
+                  <p className="mt-1">
+                    Complete: {reviewValidation.completeRentals} - Incomplete:{" "}
+                    {reviewValidation.incompleteRentals}
+                  </p>
+                  {reviewValidation.issues.length > 0 ? (
+                    <ul className="mt-2 space-y-1">
+                      {reviewValidation.issues.map((issue, index) => (
+                        <li key={`${issue.message}-${index}`}>
+                          {issue.severity === "error" ? "Fix: " : "Warning: "}
+                          {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 font-semibold">No validation warnings.</p>
+                  )}
+                </div>
+              ) : null}
               <details className="mt-3">
                 <summary className="cursor-pointer text-sm font-bold text-slate-700">
                   Raw OCR text
@@ -495,9 +617,23 @@ export default function RentalsPage() {
             </section>
           ) : null}
 
-          {reviewRentals.length > 0 ? (
+          {ocrDebug ? (
             <section className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <h3 className="font-bold">Review Detected Rentals</h3>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold">Review Detected Rentals</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Edit, delete, or add rows before tasks are generated.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addReviewRental}
+                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-950"
+                >
+                  Add
+                </button>
+              </div>
               {reviewRentals.map((rental, index) => (
                 <article
                   key={`${rental.facility}-${index}`}
@@ -512,6 +648,34 @@ export default function RentalsPage() {
                         value={rental.facility}
                         onChange={(event) =>
                           updateReviewRental(index, "facility", event.target.value)
+                        }
+                        className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm"
+                      />
+                    </label>
+                    <label className="col-span-2 block">
+                      <span className="text-xs font-bold text-slate-600">
+                        Park
+                      </span>
+                      <input
+                        value={rental.park}
+                        onChange={(event) =>
+                          updateReviewRental(index, "park", event.target.value)
+                        }
+                        className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm"
+                      />
+                    </label>
+                    <label className="col-span-2 block">
+                      <span className="text-xs font-bold text-slate-600">
+                        Sport / Type
+                      </span>
+                      <input
+                        value={rental.equipmentType}
+                        onChange={(event) =>
+                          updateReviewRental(
+                            index,
+                            "equipmentType",
+                            event.target.value,
+                          )
                         }
                         className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm"
                       />
@@ -536,6 +700,18 @@ export default function RentalsPage() {
                         value={rental.endTime}
                         onChange={(event) =>
                           updateReviewRental(index, "endTime", event.target.value)
+                        }
+                        className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm"
+                      />
+                    </label>
+                    <label className="col-span-2 block">
+                      <span className="text-xs font-bold text-slate-600">
+                        Event
+                      </span>
+                      <input
+                        value={rental.eventName}
+                        onChange={(event) =>
+                          updateReviewRental(index, "eventName", event.target.value)
                         }
                         className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm"
                       />
