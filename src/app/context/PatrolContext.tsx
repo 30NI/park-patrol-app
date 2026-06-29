@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import { parks, type ParkName } from "@/constants/parks";
-import { sampleRentals } from "@/data/sampleRentals";
 import type {
   ActivityCategory,
   ActivityLogEntry,
@@ -30,7 +29,25 @@ type GarbageStatuses = Record<
 >;
 
 type CheckResult = "checked" | "too-soon";
-type PersistedPatrolState = {
+
+export type StoredShiftState = {
+  date: string;
+  rentals: Rental[];
+  washroomCheckedAt: WashroomCheckTimes;
+  garbageCheckedAt: GarbageCheckTimes;
+  lightTaskStates: Record<string, LightTaskState>;
+  activityLog: ActivityLogEntry[];
+  startedAt: string | null;
+  shiftReportGeneratedAt: string | null;
+  endedAt: string | null;
+  workerName: string;
+  workerSignature: string;
+  reportNotes: string[];
+  routeTaskOrder: string[];
+  routeTaskTimes: Record<string, string>;
+};
+
+type PersistedPatrolStateV1 = {
   version: 1;
   rentals: Rental[];
   washroomCheckedAt: WashroomCheckTimes;
@@ -39,7 +56,21 @@ type PersistedPatrolState = {
   activityLog: ActivityLogEntry[];
 };
 
+type PersistedPatrolStateV2 = {
+  version: 2;
+  activeShiftDate: string;
+  shifts: Record<string, StoredShiftState>;
+};
+
 type PatrolContextValue = {
+  activeShiftDate: string;
+  shiftHistory: Record<string, StoredShiftState>;
+  shiftStartedAt: string | null;
+  shiftReportGeneratedAt: string | null;
+  shiftEndedAt: string | null;
+  workerName: string;
+  workerSignature: string;
+  reportNotes: string[];
   washroomStatuses: WashroomStatuses;
   washroomCheckedAt: WashroomCheckTimes;
   garbageStatuses: GarbageStatuses;
@@ -47,8 +78,12 @@ type PatrolContextValue = {
   rentals: Rental[];
   lightTaskStates: Record<string, LightTaskState>;
   activityLog: ActivityLogEntry[];
+  routeTaskOrder: string[];
+  routeTaskTimes: Record<string, string>;
   addRental: (rental: RentalInput) => string;
   importRentals: (rentals: RentalInput[]) => void;
+  deleteRental: (rentalId: string) => void;
+  clearRentals: () => void;
   checkRental: (rentalId: string) => void;
   undoRental: (rentalId: string) => void;
   setRentalGrooming: (
@@ -72,10 +107,20 @@ type PatrolContextValue = {
     notes?: string;
     targetId?: string;
   }) => void;
+  markShiftReportGenerated: () => void;
+  startShift: (workerName: string, workerSignature: string) => void;
+  endShift: () => void;
+  addReportNote: (note: string) => void;
+  setRouteTaskOrder: (taskIds: string[]) => void;
+  setRouteTaskTime: (taskId: string, time: string) => void;
+  resetRouteEdits: () => void;
+  startNewShift: () => void;
+  clearLocalData: () => void;
 };
 
 const minimumCheckMinutes = 30;
-const storageKey = "park-patrol-state-v1";
+const legacyStorageKey = "park-patrol-state-v1";
+const storageKey = "park-patrol-state-v2";
 
 const initialWashroomCheckedAt = parks.reduce((checkedAt, park) => {
   checkedAt[park] = null;
@@ -143,6 +188,18 @@ function removeLogByTarget(log: ActivityLogEntry[], targetId: string) {
   return [...log.slice(0, index), ...log.slice(index + 1)];
 }
 
+function removeRentalLogs(log: ActivityLogEntry[], rentalId: string) {
+  const targetIds = new Set([
+    `rental-${rentalId}`,
+    `manual-entry-${rentalId}`,
+    `grooming-${rentalId}`,
+    `light-${rentalId}-on`,
+    `light-${rentalId}-off`,
+  ]);
+
+  return log.filter((entry) => !entry.targetId || !targetIds.has(entry.targetId));
+}
+
 function mergeWashroomCheckTimes(saved?: Partial<WashroomCheckTimes>) {
   return parks.reduce((checkedAt, park) => {
     checkedAt[park] = saved?.[park] ?? null;
@@ -160,30 +217,143 @@ function mergeGarbageCheckTimes(saved?: Partial<GarbageCheckTimes>) {
   }, {} as GarbageCheckTimes);
 }
 
+function getShiftDate(date = new Date()) {
+  return date.toLocaleDateString("en-CA");
+}
+
+function getShiftDateFromTimestamp(timestamp: string) {
+  const date = new Date(timestamp);
+
+  return Number.isNaN(date.getTime()) ? "" : getShiftDate(date);
+}
+
+function getLatestActivityDate(activityLog: ActivityLogEntry[]) {
+  return activityLog.reduce((latestDate, entry) => {
+    const entryDate = getShiftDateFromTimestamp(entry.timestamp);
+
+    if (!entryDate) {
+      return latestDate;
+    }
+
+    return !latestDate || entryDate > latestDate ? entryDate : latestDate;
+  }, "");
+}
+
+function createEmptyShiftState(date = getShiftDate()): StoredShiftState {
+  return {
+    date,
+    rentals: [],
+    washroomCheckedAt: mergeWashroomCheckTimes(),
+    garbageCheckedAt: mergeGarbageCheckTimes(),
+    lightTaskStates: {},
+    activityLog: [],
+    startedAt: null,
+    shiftReportGeneratedAt: null,
+    endedAt: null,
+    workerName: "",
+    workerSignature: "",
+    reportNotes: [],
+    routeTaskOrder: [],
+    routeTaskTimes: {},
+  };
+}
+
+function normalizeShiftState(
+  date: string,
+  shift?: Partial<StoredShiftState>,
+): StoredShiftState {
+  return {
+    date,
+    rentals: Array.isArray(shift?.rentals) ? shift.rentals : [],
+    washroomCheckedAt: mergeWashroomCheckTimes(shift?.washroomCheckedAt),
+    garbageCheckedAt: mergeGarbageCheckTimes(shift?.garbageCheckedAt),
+    lightTaskStates: shift?.lightTaskStates ?? {},
+    activityLog: Array.isArray(shift?.activityLog) ? shift.activityLog : [],
+    startedAt: shift?.startedAt ?? null,
+    shiftReportGeneratedAt: shift?.shiftReportGeneratedAt ?? null,
+    endedAt: shift?.endedAt ?? null,
+    workerName: shift?.workerName ?? "",
+    workerSignature: shift?.workerSignature ?? "",
+    reportNotes: Array.isArray(shift?.reportNotes) ? shift.reportNotes : [],
+    routeTaskOrder: Array.isArray(shift?.routeTaskOrder)
+      ? shift.routeTaskOrder
+      : [],
+    routeTaskTimes: shift?.routeTaskTimes ?? {},
+  };
+}
+
+function migrateV1State(
+  parsedState: Partial<PersistedPatrolStateV1>,
+): PersistedPatrolStateV2 {
+  const today = getShiftDate();
+  const activityLog = Array.isArray(parsedState.activityLog)
+    ? parsedState.activityLog
+    : [];
+  const migratedShiftDate = getLatestActivityDate(activityLog) || today;
+  const migratedShift = normalizeShiftState(migratedShiftDate, {
+    rentals: Array.isArray(parsedState.rentals) ? parsedState.rentals : [],
+    washroomCheckedAt: parsedState.washroomCheckedAt,
+    garbageCheckedAt: parsedState.garbageCheckedAt,
+    lightTaskStates: parsedState.lightTaskStates ?? {},
+    activityLog,
+  });
+  const activeShiftDate = today;
+  const shifts: Record<string, StoredShiftState> = {
+    [migratedShiftDate]: migratedShift,
+  };
+
+  if (!shifts[today]) {
+    shifts[today] = createEmptyShiftState(today);
+  }
+
+  return {
+    version: 2,
+    activeShiftDate,
+    shifts,
+  };
+}
+
 function readPersistedState() {
   try {
     if (typeof window === "undefined") {
       return null;
     }
 
-    const savedState = window.localStorage.getItem(storageKey);
+    const savedState =
+      window.localStorage.getItem(storageKey) ??
+      window.localStorage.getItem(legacyStorageKey);
 
     if (!savedState) {
       return null;
     }
 
-    const parsedState = JSON.parse(savedState) as Partial<PersistedPatrolState>;
+    const parsedState = JSON.parse(savedState) as
+      | Partial<PersistedPatrolStateV1>
+      | Partial<PersistedPatrolStateV2>;
+
+    if (parsedState.version !== 2) {
+      return migrateV1State(parsedState as Partial<PersistedPatrolStateV1>);
+    }
+
+    const persistedV2 = parsedState as Partial<PersistedPatrolStateV2>;
+    const today = getShiftDate();
+    const activeShiftDate = persistedV2.activeShiftDate ?? today;
+    const shifts = Object.entries(persistedV2.shifts ?? {}).reduce(
+      (normalizedShifts, [date, shift]) => {
+        normalizedShifts[date] = normalizeShiftState(date, shift);
+        return normalizedShifts;
+      },
+      {} as Record<string, StoredShiftState>,
+    );
+
+    if (!shifts[activeShiftDate]) {
+      shifts[activeShiftDate] = createEmptyShiftState(activeShiftDate);
+    }
 
     return {
-      rentals: Array.isArray(parsedState.rentals)
-        ? parsedState.rentals
-        : sampleRentals,
-      washroomCheckedAt: mergeWashroomCheckTimes(parsedState.washroomCheckedAt),
-      garbageCheckedAt: mergeGarbageCheckTimes(parsedState.garbageCheckedAt),
-      lightTaskStates: parsedState.lightTaskStates ?? {},
-      activityLog: Array.isArray(parsedState.activityLog)
-        ? parsedState.activityLog
-        : [],
+      version: 2,
+      activeShiftDate,
+      shifts,
     };
   } catch {
     return null;
@@ -191,15 +361,31 @@ function readPersistedState() {
 }
 
 export function PatrolProvider({ children }: { children: ReactNode }) {
+  const [activeShiftDate, setActiveShiftDate] = useState(() => getShiftDate());
+  const [shiftHistory, setShiftHistory] = useState<
+    Record<string, StoredShiftState>
+  >({});
+  const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
+  const [shiftReportGeneratedAt, setShiftReportGeneratedAt] = useState<
+    string | null
+  >(null);
+  const [shiftEndedAt, setShiftEndedAt] = useState<string | null>(null);
+  const [workerName, setWorkerName] = useState("");
+  const [workerSignature, setWorkerSignature] = useState("");
+  const [reportNotes, setReportNotes] = useState<string[]>([]);
   const [washroomCheckedAt, setWashroomCheckedAt] =
     useState<WashroomCheckTimes>(initialWashroomCheckedAt);
   const [garbageCheckedAt, setGarbageCheckedAt] =
     useState<GarbageCheckTimes>(initialGarbageCheckedAt);
-  const [rentals, setRentals] = useState<Rental[]>(sampleRentals);
+  const [rentals, setRentals] = useState<Rental[]>([]);
   const [lightTaskStates, setLightTaskStates] = useState<
     Record<string, LightTaskState>
   >({});
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
+  const [routeTaskOrder, setRouteTaskOrderState] = useState<string[]>([]);
+  const [routeTaskTimes, setRouteTaskTimes] = useState<Record<string, string>>(
+    {},
+  );
   const [now, setNow] = useState(() => new Date());
   const [hasLoadedSavedState, setHasLoadedSavedState] = useState(false);
 
@@ -211,15 +397,35 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const loadSavedState = window.setTimeout(() => {
+      const today = getShiftDate();
       const savedState = readPersistedState();
+      const shifts = savedState?.shifts ?? {};
+      const nextActiveShiftDate =
+        savedState?.activeShiftDate === today
+          ? savedState.activeShiftDate
+          : today;
 
-      if (savedState) {
-        setWashroomCheckedAt(savedState.washroomCheckedAt);
-        setGarbageCheckedAt(savedState.garbageCheckedAt);
-        setRentals(savedState.rentals);
-        setLightTaskStates(savedState.lightTaskStates);
-        setActivityLog(savedState.activityLog);
+      if (!shifts[nextActiveShiftDate]) {
+        shifts[nextActiveShiftDate] = createEmptyShiftState(nextActiveShiftDate);
       }
+
+      const activeShift = shifts[nextActiveShiftDate];
+
+      setActiveShiftDate(nextActiveShiftDate);
+      setShiftHistory(shifts);
+      setShiftStartedAt(activeShift.startedAt);
+      setShiftReportGeneratedAt(activeShift.shiftReportGeneratedAt);
+      setShiftEndedAt(activeShift.endedAt);
+      setWorkerName(activeShift.workerName);
+      setWorkerSignature(activeShift.workerSignature);
+      setReportNotes(activeShift.reportNotes);
+      setWashroomCheckedAt(activeShift.washroomCheckedAt);
+      setGarbageCheckedAt(activeShift.garbageCheckedAt);
+      setRentals(activeShift.rentals);
+      setLightTaskStates(activeShift.lightTaskStates);
+      setActivityLog(activeShift.activityLog);
+      setRouteTaskOrderState(activeShift.routeTaskOrder);
+      setRouteTaskTimes(activeShift.routeTaskTimes);
 
       setHasLoadedSavedState(true);
     }, 0);
@@ -232,23 +438,50 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const persistedState: PersistedPatrolState = {
-      version: 1,
+    const currentShift: StoredShiftState = {
+      date: activeShiftDate,
       rentals,
       washroomCheckedAt,
       garbageCheckedAt,
       lightTaskStates,
       activityLog,
+      startedAt: shiftStartedAt,
+      shiftReportGeneratedAt,
+      endedAt: shiftEndedAt,
+      workerName,
+      workerSignature,
+      reportNotes,
+      routeTaskOrder,
+      routeTaskTimes,
+    };
+    const persistedState: PersistedPatrolStateV2 = {
+      version: 2,
+      activeShiftDate,
+      shifts: {
+        ...shiftHistory,
+        [activeShiftDate]: currentShift,
+      },
     };
 
     window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.removeItem(legacyStorageKey);
   }, [
     activityLog,
+    activeShiftDate,
     garbageCheckedAt,
     hasLoadedSavedState,
     lightTaskStates,
+    reportNotes,
     rentals,
+    routeTaskOrder,
+    routeTaskTimes,
+    shiftHistory,
+    shiftEndedAt,
+    shiftReportGeneratedAt,
+    shiftStartedAt,
     washroomCheckedAt,
+    workerName,
+    workerSignature,
   ]);
 
   const washroomStatuses = useMemo(
@@ -301,6 +534,190 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const markShiftReportGenerated = useCallback(() => {
+    setShiftReportGeneratedAt(new Date().toISOString());
+  }, []);
+
+  const startShift = useCallback((name: string, signature: string) => {
+    const startedAt = new Date().toISOString();
+    const startShiftEntry: ActivityLogEntry = {
+      id: crypto.randomUUID(),
+      timestamp: startedAt,
+      category: "report",
+      action: "Shift started",
+      notes: name.trim(),
+    };
+
+    setShiftStartedAt(startedAt);
+    setShiftEndedAt(null);
+    setWorkerName(name.trim());
+    setWorkerSignature(signature);
+    setActivityLog((current) => [startShiftEntry, ...current]);
+  }, []);
+
+  const addReportNote = useCallback((note: string) => {
+    const trimmedNote = note.trim();
+
+    if (!trimmedNote) {
+      return;
+    }
+
+    setReportNotes((current) => [...current, trimmedNote]);
+    setActivityLog((current) => [
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        category: "report",
+        action: "Shift note added",
+        notes: trimmedNote,
+      },
+      ...current,
+    ]);
+  }, []);
+
+  const endShift = useCallback(() => {
+    const endedAt = new Date().toISOString();
+    const endShiftEntry: ActivityLogEntry = {
+      id: crypto.randomUUID(),
+      timestamp: endedAt,
+      category: "report",
+      action: "Shift ended",
+    };
+    const endedActivityLog = [endShiftEntry, ...activityLog];
+    const currentShift: StoredShiftState = {
+      date: activeShiftDate,
+      rentals,
+      washroomCheckedAt,
+      garbageCheckedAt,
+      lightTaskStates,
+      activityLog: endedActivityLog,
+      startedAt: shiftStartedAt,
+      shiftReportGeneratedAt,
+      endedAt,
+      workerName,
+      workerSignature,
+      reportNotes,
+      routeTaskOrder,
+      routeTaskTimes,
+    };
+
+    setActivityLog(endedActivityLog);
+    setShiftEndedAt(endedAt);
+    setShiftHistory((current) => ({
+      ...current,
+      [activeShiftDate]: currentShift,
+    }));
+  }, [
+    activeShiftDate,
+    activityLog,
+    garbageCheckedAt,
+    lightTaskStates,
+    reportNotes,
+    rentals,
+    routeTaskOrder,
+    routeTaskTimes,
+    shiftReportGeneratedAt,
+    shiftStartedAt,
+    washroomCheckedAt,
+    workerName,
+    workerSignature,
+  ]);
+
+  const startNewShift = useCallback(() => {
+    const today = getShiftDate();
+    const currentShift: StoredShiftState = {
+      date: activeShiftDate,
+      rentals,
+      washroomCheckedAt,
+      garbageCheckedAt,
+      lightTaskStates,
+      activityLog,
+      startedAt: shiftStartedAt,
+      shiftReportGeneratedAt,
+      endedAt: shiftEndedAt,
+      workerName,
+      workerSignature,
+      reportNotes,
+      routeTaskOrder,
+      routeTaskTimes,
+    };
+    const nextShift = createEmptyShiftState(today);
+
+    setActiveShiftDate(today);
+    setShiftHistory((current) => ({
+      ...current,
+      [activeShiftDate]: currentShift,
+      [today]: nextShift,
+    }));
+    setShiftStartedAt(nextShift.startedAt);
+    setShiftReportGeneratedAt(nextShift.shiftReportGeneratedAt);
+    setShiftEndedAt(nextShift.endedAt);
+    setWorkerName(nextShift.workerName);
+    setWorkerSignature(nextShift.workerSignature);
+    setReportNotes(nextShift.reportNotes);
+    setWashroomCheckedAt(nextShift.washroomCheckedAt);
+    setGarbageCheckedAt(nextShift.garbageCheckedAt);
+    setRentals(nextShift.rentals);
+    setLightTaskStates(nextShift.lightTaskStates);
+    setActivityLog(nextShift.activityLog);
+    setRouteTaskOrderState(nextShift.routeTaskOrder);
+    setRouteTaskTimes(nextShift.routeTaskTimes);
+  }, [
+    activeShiftDate,
+    activityLog,
+    garbageCheckedAt,
+    lightTaskStates,
+    reportNotes,
+    rentals,
+    routeTaskOrder,
+    routeTaskTimes,
+    shiftEndedAt,
+    shiftReportGeneratedAt,
+    shiftStartedAt,
+    washroomCheckedAt,
+    workerName,
+    workerSignature,
+  ]);
+
+  const clearLocalData = useCallback(() => {
+    const today = getShiftDate();
+    const nextShift = createEmptyShiftState(today);
+
+    window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(legacyStorageKey);
+    setActiveShiftDate(today);
+    setShiftHistory({ [today]: nextShift });
+    setShiftStartedAt(nextShift.startedAt);
+    setShiftReportGeneratedAt(nextShift.shiftReportGeneratedAt);
+    setShiftEndedAt(nextShift.endedAt);
+    setWorkerName(nextShift.workerName);
+    setWorkerSignature(nextShift.workerSignature);
+    setReportNotes(nextShift.reportNotes);
+    setWashroomCheckedAt(nextShift.washroomCheckedAt);
+    setGarbageCheckedAt(nextShift.garbageCheckedAt);
+    setRentals(nextShift.rentals);
+    setLightTaskStates(nextShift.lightTaskStates);
+    setActivityLog(nextShift.activityLog);
+    setRouteTaskOrderState(nextShift.routeTaskOrder);
+    setRouteTaskTimes(nextShift.routeTaskTimes);
+  }, []);
+
+  const setRouteTaskOrder = useCallback((taskIds: string[]) => {
+    setRouteTaskOrderState(taskIds);
+  }, []);
+
+  const setRouteTaskTime = useCallback((taskId: string, time: string) => {
+    setRouteTaskTimes((current) => ({
+      ...current,
+      [taskId]: time,
+    }));
+  }, []);
+
+  const resetRouteEdits = useCallback(() => {
+    setRouteTaskOrderState([]);
+    setRouteTaskTimes({});
+  }, []);
+
   const addRental = useCallback(
     (rentalInput: RentalInput) => {
       const rentalId = `manual-rental-${crypto.randomUUID()}`;
@@ -346,6 +763,49 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     },
     [addActivity],
   );
+
+  const deleteRental = useCallback(
+    (rentalId: string) => {
+      const rental = rentals.find((item) => item.id === rentalId);
+
+      if (!rental) {
+        return;
+      }
+
+      setRentals((current) => current.filter((item) => item.id !== rentalId));
+      setLightTaskStates((current) => {
+        const next = { ...current };
+        delete next[`light-${rentalId}`];
+        return next;
+      });
+      setActivityLog((current) => removeRentalLogs(current, rentalId));
+      addActivity({
+        park: rental.park,
+        category: "rental",
+        action: `Rental deleted - ${rental.facility}`,
+      });
+    },
+    [addActivity, rentals],
+  );
+
+  const clearRentals = useCallback(() => {
+    if (rentals.length === 0) {
+      return;
+    }
+
+    setRentals([]);
+    setLightTaskStates({});
+    setActivityLog((current) =>
+      current.filter(
+        (entry) => entry.category !== "rental" && entry.category !== "lights",
+      ),
+    );
+    addActivity({
+      category: "rental",
+      action: "All rentals cleared",
+      notes: `${rentals.length} rental${rentals.length === 1 ? "" : "s"} removed`,
+    });
+  }, [addActivity, rentals.length]);
 
   const checkRental = useCallback(
     (rentalId: string) => {
@@ -657,36 +1117,103 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     [addActivity],
   );
 
-  const value = useMemo(
+  const currentShiftHistory = useMemo(
     () => ({
-      washroomStatuses,
-      washroomCheckedAt,
-      garbageStatuses,
-      garbageCheckedAt,
-      rentals,
-      lightTaskStates,
-      activityLog,
-      addRental,
-      importRentals,
-      checkRental,
-      undoRental,
-      setRentalGrooming,
-      undoRentalGrooming,
-      turnLightOn,
-      turnLightOff,
-      undoLightOn,
-      undoLightOff,
-      checkWashroom,
-      canUndoTimedCheck,
-      undoWashroom,
-      checkGarbage,
-      undoGarbage,
-      addActivity,
+      ...shiftHistory,
+      [activeShiftDate]: {
+        date: activeShiftDate,
+        rentals,
+        washroomCheckedAt,
+        garbageCheckedAt,
+        lightTaskStates,
+        activityLog,
+        startedAt: shiftStartedAt,
+        shiftReportGeneratedAt,
+        endedAt: shiftEndedAt,
+        workerName,
+        workerSignature,
+        reportNotes,
+        routeTaskOrder,
+        routeTaskTimes,
+      },
     }),
     [
+      activeShiftDate,
+      activityLog,
+      garbageCheckedAt,
+      lightTaskStates,
+      reportNotes,
+      rentals,
+      routeTaskOrder,
+      routeTaskTimes,
+      shiftHistory,
+      shiftEndedAt,
+      shiftReportGeneratedAt,
+      shiftStartedAt,
+      washroomCheckedAt,
+      workerName,
+      workerSignature,
+    ],
+  );
+
+  const value = useMemo(
+    () => ({
+      activeShiftDate,
+      shiftHistory: currentShiftHistory,
+      shiftStartedAt,
+      shiftReportGeneratedAt,
+      shiftEndedAt,
+      workerName,
+      workerSignature,
+      reportNotes,
+      washroomStatuses,
+      washroomCheckedAt,
+      garbageStatuses,
+      garbageCheckedAt,
+      rentals,
+      lightTaskStates,
+      activityLog,
+      routeTaskOrder,
+      routeTaskTimes,
+      addRental,
+      importRentals,
+      deleteRental,
+      clearRentals,
+      checkRental,
+      undoRental,
+      setRentalGrooming,
+      undoRentalGrooming,
+      turnLightOn,
+      turnLightOff,
+      undoLightOn,
+      undoLightOff,
+      checkWashroom,
+      canUndoTimedCheck,
+      undoWashroom,
+      checkGarbage,
+      undoGarbage,
+      addActivity,
+      markShiftReportGenerated,
+      startShift,
+      endShift,
+      addReportNote,
+      setRouteTaskOrder,
+      setRouteTaskTime,
+      resetRouteEdits,
+      startNewShift,
+      clearLocalData,
+    }),
+    [
+      activeShiftDate,
       activityLog,
       addActivity,
       addRental,
+      addReportNote,
+      clearLocalData,
+      clearRentals,
+      currentShiftHistory,
+      deleteRental,
+      endShift,
       importRentals,
       canUndoTimedCheck,
       checkGarbage,
@@ -695,8 +1222,20 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       garbageCheckedAt,
       garbageStatuses,
       lightTaskStates,
+      markShiftReportGenerated,
+      reportNotes,
       rentals,
+      resetRouteEdits,
+      routeTaskOrder,
+      routeTaskTimes,
       setRentalGrooming,
+      setRouteTaskOrder,
+      setRouteTaskTime,
+      shiftEndedAt,
+      shiftReportGeneratedAt,
+      shiftStartedAt,
+      startShift,
+      startNewShift,
       turnLightOff,
       turnLightOn,
       undoGarbage,
@@ -707,6 +1246,8 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       undoWashroom,
       washroomCheckedAt,
       washroomStatuses,
+      workerName,
+      workerSignature,
     ],
   );
 

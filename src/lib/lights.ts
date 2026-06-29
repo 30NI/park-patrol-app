@@ -55,7 +55,7 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
     }))
     .map((task, index) => {
       if (index > 0) {
-        scheduledOnMinutes += task.park === previousPark ? 3 : 15;
+        scheduledOnMinutes += task.park === previousPark ? 5 : 15;
       }
 
       previousPark = task.park;

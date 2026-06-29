@@ -1,91 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { parseRentalSheetTextWithDebug } from "@/lib/rentalSheetParser";
+import { useEffect, useRef, useState } from "react";
 import type { Rental, RentalInput } from "@/types/rental";
+import { parseRentalSheetTextWithDebug } from "@/lib/rentalSheetParser";
 import { timeToMinutes } from "@/lib/time";
 import { usePatrol } from "../context/PatrolContext";
 
-const mockOcrText = `
-DATE: Jun 9, 2026
-Reservation Master Report
-Page: 1 of 2
-6:00 PM - 10:30 PM
-CP - Diamond #3 (Hardball)
-Field - Baseball
-Centennial Park
-Baseball Games
-Ball Diamond - Games with Lines
-Local Baseball Association
-R10001
-30
-6:00 PM - 8:00 PM
-HBP - Diamond #1 - Softball
-Field - Baseball
-Harold Black Park
-Baseball Games
-Ball Diamond - Games with Lines
-Local Baseball Association
-R10002
-30
-6:00 PM - 7:30 PM
-HBP - Diamond #2 - Hardball
-Field - Baseball
-Harold Black Park
-Baseball Practice
-Ball Diamond - No Maintenance
-Local Baseball Association
-R10003
-1
-6:00 PM - 8:30 PM
-HBP - Soccer Field - 7V7 Sizes
-Field - Soccer
-Harold Black Park
-Soccer Rental
-Soccer Field Rental - Minor
-Local Soccer Club
-R10004
-20
-6:00 PM - 7:00 PM
-NPP - Diamond #1 (Pitching Machine)
-Field - Baseball
-North Pelham Park
-Baseball Practice
-Ball Diamond - No Maintenance
-Local Baseball Association
-R10005
-1
-6:00 PM - 7:00 PM
-NPP - Diamond #2 (T-ball)
-Field - Baseball
-North Pelham Park
-Baseball Practice
-Ball Diamond - No Maintenance
-Local Baseball Association
-R10006
-1
-6:00 PM - 8:00 PM
-Glynn A. Green Field - Soccer
-Field - Soccer
-Glynn A. Green
-Soccer Rental
-Soccer Field Rental - Minor
-Local Soccer Club
-R10007
-20
-6:30 PM - 8:30 PM
-CP - Soccer #1 - Full Field
-CP - Soccer #2 - Full Field
-Field - Soccer
-Centennial Park
-Soccer Rental
-Soccer Field Rental - Minor
-Local Soccer Club
-R10008
-20
-6:45 PM - 9:15 PM | CP - Diamond #2 (Softball) | Field - Baseball | Softball Games | Ball Diamond - Games with Lines | Local Softball League | Rental Contact | (905) 000-0000 | R10009 | 20 | Centennial Park
-8:00 PM - 9:30 PM | HBP - Diamond #1 - Softball | Field - Baseball | Baseball Practice | Ball Diamond - No Maintenance | Local Baseball Association | Rental Contact | (905) 000-0000 | R10010 | 1 | Harold Black Park
-`.trim();
+type SelectedRentalSheetImage = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+type RentalSheetScanResult = {
+  rentals: RentalInput[];
+  skippedLines: string[];
+  rawText: string;
+};
+
+type OcrProgress = {
+  page: number;
+  total: number;
+  status: string;
+  percent: number;
+};
+
+function getOcrErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown OCR error";
+}
 
 function sortRentalsByStartTime(a: Rental, b: Rental) {
   return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
@@ -98,6 +48,52 @@ function isGameRental(rental: Rental) {
   return searchText.includes("game");
 }
 
+async function preprocessImageForOcr(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(4, Math.max(2, 3200 / bitmap.width));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+
+  const context = canvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!context) {
+    bitmap.close();
+    return file;
+  }
+
+  context.fillStyle = "white";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
+    const value = contrast < 170 ? 0 : 255;
+
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+    data[index + 3] = 255;
+  }
+
+  context.putImageData(imageData, 0, 0);
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/png"),
+  );
+
+  return blob ?? file;
+}
+
 export default function RentalsPage() {
   const {
     rentals,
@@ -106,11 +102,18 @@ export default function RentalsPage() {
     setRentalGrooming,
     undoRentalGrooming,
     importRentals,
+    deleteRental,
+    clearRentals,
     addActivity,
   } = usePatrol();
   const [groomingRental, setGroomingRental] = useState<Rental | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [selectedImages, setSelectedImages] = useState<
+    SelectedRentalSheetImage[]
+  >([]);
+  const selectedImagesRef = useRef<SelectedRentalSheetImage[]>([]);
   const [ocrMessage, setOcrMessage] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
   const [reviewRentals, setReviewRentals] = useState<RentalInput[]>([]);
   const [ocrDebug, setOcrDebug] = useState<{
     rawText: string;
@@ -119,6 +122,19 @@ export default function RentalsPage() {
   } | null>(null);
   const sortedRentals = rentals.slice().sort(sortRentalsByStartTime);
   const checkedCount = rentals.filter((rental) => rental.checkedIn).length;
+
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
+
+  useEffect(
+    () => () => {
+      selectedImagesRef.current.forEach((image) =>
+        URL.revokeObjectURL(image.previewUrl),
+      );
+    },
+    [],
+  );
 
   function handleUndo(rentalId: string) {
     if (window.confirm("Undo this rental check?")) {
@@ -140,44 +156,176 @@ export default function RentalsPage() {
     setGroomingRental(null);
   }
 
-  function handleScanRentalSheet() {
-    // Future OCR flow:
-    // 1. Upload rental sheet photo.
-    // 2. Send image to OCR/AI service. Mock OCR text is used for now.
-    // 3. Extract rentals into structured JSON.
-    // 4. Show review screen.
-    // 5. User confirms rentals.
-    // 6. Save rentals and generate tasks.
-    const result = parseRentalSheetTextWithDebug(mockOcrText);
-    const detectedRentals = result.rentals;
-    setReviewRentals(detectedRentals);
-    setOcrDebug({
-      rawText: result.rawText,
-      skippedLines: result.skippedLines,
-      detectedCount: result.rentals.length,
-    });
-    addActivity({
-      category: "rental",
-      action: "Rental sheet scanned",
-      notes: "Mock OCR text parsed for review",
-    });
-    setOcrMessage(`${detectedRentals.length} rentals detected. Review before importing.`);
-  }
-
-  function handleRentalSheetImage(file: File | null) {
-    setOcrMessage("");
-
-    if (!file) {
-      setImagePreviewUrl("");
-      setOcrDebug(null);
+  async function handleScanRentalSheet() {
+    if (selectedImages.length === 0) {
+      setOcrMessage("Upload one or more rental sheet photos first.");
       return;
     }
 
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      setImagePreviewUrl(typeof reader.result === "string" ? reader.result : "");
+    setIsScanning(true);
+    setOcrMessage("Preparing local OCR...");
+    setOcrProgress({
+      page: 0,
+      total: selectedImages.length,
+      status: "Starting Tesseract",
+      percent: 0,
     });
-    reader.readAsDataURL(file);
+    setReviewRentals([]);
+    setOcrDebug(null);
+
+    let worker: Awaited<
+      ReturnType<typeof import("tesseract.js")["createWorker"]>
+    > | null = null;
+
+    try {
+      const Tesseract = await import("tesseract.js");
+      let currentPage = 0;
+
+      worker = await Tesseract.createWorker("eng", Tesseract.OEM.LSTM_ONLY, {
+        workerPath: "/tesseract/worker.min.js",
+        workerBlobURL: false,
+        corePath: "/tesseract",
+        langPath: "/tesseract/lang-data",
+        gzip: true,
+        logger: (message) => {
+          setOcrProgress({
+            page: currentPage,
+            total: selectedImages.length,
+            status: message.status,
+            percent: Math.round(message.progress * 100),
+          });
+        },
+      });
+
+      await worker.setParameters({
+        preserve_interword_spaces: "1",
+        tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+        user_defined_dpi: "300",
+      });
+
+      const pageTexts: string[] = [];
+
+      for (const [index, image] of selectedImages.entries()) {
+        currentPage = index + 1;
+        setOcrMessage(`Scanning page ${currentPage} of ${selectedImages.length}...`);
+        setOcrProgress({
+          page: currentPage,
+          total: selectedImages.length,
+          status: "Recognizing text",
+          percent: 0,
+        });
+
+        const processedImage = await preprocessImageForOcr(image.file);
+        const result = await worker.recognize(processedImage);
+        const text = result.data.text.trim();
+
+        if (text) {
+          pageTexts.push(text);
+        }
+      }
+
+      const rawText = pageTexts.join("\n\n").trim();
+
+      if (!rawText) {
+        setOcrMessage("No rental sheet text was detected.");
+        return;
+      }
+
+      const result: RentalSheetScanResult = parseRentalSheetTextWithDebug(rawText);
+      const detectedRentals = result.rentals;
+      setReviewRentals(detectedRentals);
+      setOcrDebug({
+        rawText: result.rawText,
+        skippedLines: result.skippedLines,
+        detectedCount: result.rentals.length,
+      });
+      addActivity({
+        category: "rental",
+        action: "Rental sheet scanned",
+        notes: `${selectedImages.length} photo${
+          selectedImages.length === 1 ? "" : "s"
+        } parsed for review`,
+      });
+      setOcrMessage(
+        `${detectedRentals.length} rentals detected. Review before importing.`,
+      );
+    } catch (error) {
+      const errorMessage = getOcrErrorMessage(error);
+
+      console.error("[rental OCR] scan failed:", error);
+      setOcrMessage(
+        `Rental sheet scan failed: ${errorMessage}. Check the photos and try again.`,
+      );
+    } finally {
+      await worker?.terminate();
+      setIsScanning(false);
+      setOcrProgress(null);
+    }
+  }
+
+  function handleDeleteRental(rental: Rental) {
+    if (window.confirm(`Delete ${rental.facility}?`)) {
+      deleteRental(rental.id);
+    }
+  }
+
+  function handleClearRentals() {
+    if (
+      rentals.length > 0 &&
+      window.confirm(`Clear all ${rentals.length} rental${rentals.length === 1 ? "" : "s"}?`)
+    ) {
+      clearRentals();
+      setReviewRentals([]);
+      setOcrDebug(null);
+      setOcrMessage("Rentals cleared.");
+    }
+  }
+
+  function handleRentalSheetImages(fileList: FileList | null) {
+    setOcrMessage("");
+    setOcrProgress(null);
+    setReviewRentals([]);
+    setOcrDebug(null);
+
+    const files = Array.from(fileList ?? []);
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const nextImages = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setSelectedImages((current) => [
+      ...current,
+      ...nextImages,
+    ]);
+  }
+
+  function removeSelectedImage(imageId: string) {
+    setSelectedImages((current) => {
+      const imageToRemove = current.find((image) => image.id === imageId);
+
+      if (imageToRemove) {
+        URL.revokeObjectURL(imageToRemove.previewUrl);
+      }
+
+      return current.filter((image) => image.id !== imageId);
+    });
+    setReviewRentals([]);
+    setOcrDebug(null);
+    setOcrMessage("");
+  }
+
+  function clearSelectedImages() {
+    selectedImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    setSelectedImages([]);
+    setReviewRentals([]);
+    setOcrDebug(null);
+    setOcrMessage("");
   }
 
   function updateReviewRental(
@@ -222,35 +370,91 @@ export default function RentalsPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-bold">Import Rental Sheet</h2>
         <div className="mt-4 space-y-3">
-          <label className="flex min-h-14 w-full cursor-pointer items-center justify-center rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]">
-            Upload Image
+          <label className="relative flex min-h-14 w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]">
+            Add Sheets
             <input
               type="file"
               accept="image/*"
-              className="hidden"
+              multiple
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                handleRentalSheetImage(file);
+                handleRentalSheetImages(event.target.files);
+                event.currentTarget.value = "";
               }}
             />
           </label>
 
-          {imagePreviewUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imagePreviewUrl}
-              alt="Selected rental sheet preview"
-              className="max-h-80 w-full rounded-lg border border-slate-200 object-contain"
-            />
+          {selectedImages.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-100 p-3">
+                <p className="text-sm font-semibold text-slate-700">
+                  {selectedImages.length} sheet photo
+                  {selectedImages.length === 1 ? "" : "s"} selected
+                </p>
+                <button
+                  type="button"
+                  onClick={clearSelectedImages}
+                  className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-950"
+                >
+                  Clear
+                </button>
+              </div>
+              {selectedImages.map((image, index) => (
+                <figure
+                  key={image.id}
+                  className="rounded-lg border border-slate-200 bg-white p-2"
+                >
+                  <figcaption className="mb-2 flex items-center justify-between gap-3 text-sm font-bold text-slate-700">
+                    <span>
+                      Sheet {index + 1}: {image.file.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeSelectedImage(image.id)}
+                      className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-950"
+                    >
+                      Remove
+                    </button>
+                  </figcaption>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image.previewUrl}
+                    alt={`Selected rental sheet ${index + 1}`}
+                    className="max-h-80 w-full rounded-lg border border-slate-200 object-contain"
+                  />
+                </figure>
+              ))}
+            </div>
           ) : null}
 
           <button
             type="button"
             onClick={handleScanRentalSheet}
-            className="min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm transition active:scale-[0.99]"
+            disabled={isScanning || selectedImages.length === 0}
+            className="min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm transition active:scale-[0.99] disabled:bg-slate-100 disabled:text-slate-400"
           >
-            Scan Rental Sheet
+            {isScanning ? "Scanning..." : "Scan Selected Sheets"}
           </button>
+
+          {ocrProgress ? (
+            <div className="rounded-lg bg-slate-100 p-3 text-sm font-semibold text-slate-700">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  {ocrProgress.page > 0
+                    ? `Page ${ocrProgress.page} of ${ocrProgress.total}`
+                    : "Starting OCR"}
+                </span>
+                <span>{ocrProgress.percent}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-slate-950 transition-all"
+                  style={{ width: `${ocrProgress.percent}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-600">{ocrProgress.status}</p>
+            </div>
+          ) : null}
 
           {ocrMessage ? (
             <p className="rounded-lg bg-slate-100 p-3 text-sm font-semibold text-slate-700">
@@ -393,10 +597,20 @@ export default function RentalsPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold">Rental Checks</h2>
-          <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-sm font-bold text-slate-700">
-            {checkedCount}/{rentals.length}
-          </span>
+          <div>
+            <h2 className="text-lg font-bold">Rental Checks</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-600">
+              {checkedCount}/{rentals.length} checked
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearRentals}
+            disabled={rentals.length === 0}
+            className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-950 shadow-sm disabled:opacity-50"
+          >
+            Clear
+          </button>
         </div>
       </section>
 
@@ -479,6 +693,13 @@ export default function RentalsPage() {
               className="mt-4 min-h-14 w-full rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
             >
               {rental.checkedIn ? "Undo Check" : "Check Rental"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteRental(rental)}
+              className="mt-2 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition active:scale-[0.99]"
+            >
+              Delete Rental
             </button>
           </article>
         ))}
