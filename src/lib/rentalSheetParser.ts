@@ -551,7 +551,11 @@ function splitPageSections(lines: string[]) {
   let currentSection: string[] = [];
 
   lines.forEach((line) => {
-    if (/^page\b/i.test(line) && currentSection.length > 0) {
+    if (
+      (/^page\b/i.test(line) ||
+        (/reservation.*report/i.test(line) && blockHasFacility(currentSection))) &&
+      currentSection.length > 0
+    ) {
       sections.push(currentSection);
       currentSection = [line];
       return;
@@ -678,6 +682,109 @@ function parseColumnarRows(lines: string[], rentalDate: string) {
   return { rentals: columnRentals, recoveredLines };
 }
 
+function parseSequentialFacilityRows(lines: string[], rentalDate: string) {
+  const sequentialRentals: RentalInput[] = [];
+  const recoveredLines = new Set<string>();
+
+  splitPageSections(lines).forEach((sectionLines) => {
+    const facilityRows = sectionLines
+      .map((line, index) => ({
+        index,
+        line,
+        facility: extractNoisyFacility(line),
+      }))
+      .filter((item) => item.facility)
+      .filter(
+        (item, index, items) =>
+          item.facility !== items[index - 1]?.facility ||
+          item.index - (items[index - 1]?.index ?? 0) > 3,
+      );
+
+    if (facilityRows.length < 2) {
+      return;
+    }
+
+    const firstFacilityIndex = facilityRows[0]?.index ?? 0;
+    const orphanTimeRows = sectionLines
+      .map((line, index) => ({
+        index,
+        line,
+        timeRange: parseAnyTimeRange(line),
+      }))
+      .filter(
+        (item) =>
+          item.index < firstFacilityIndex &&
+          item.timeRange.startTime &&
+          item.timeRange.endTime,
+      );
+    const timeRows = sectionLines
+      .map((line, index) => ({
+        index,
+        line,
+        timeRange: parseAnyTimeRange(line),
+      }))
+      .filter(
+        (item) =>
+          item.index > firstFacilityIndex &&
+          item.timeRange.startTime &&
+          item.timeRange.endTime,
+      );
+    const orderedTimeRows =
+      timeRows.length < facilityRows.length
+        ? [...timeRows, ...orphanTimeRows]
+        : timeRows;
+
+    if (orderedTimeRows.length < Math.min(2, facilityRows.length)) {
+      return;
+    }
+
+    facilityRows.forEach((facilityRow, rowIndex) => {
+      const timeRow = orderedTimeRows[rowIndex];
+
+      if (!timeRow) {
+        return;
+      }
+
+      const nextFacilityIndex =
+        facilityRows[rowIndex + 1]?.index ?? sectionLines.length;
+      const facilityBlockLines = sectionLines.slice(
+        facilityRow.index,
+        nextFacilityIndex,
+      );
+      const blockText = normalizeOcrText(facilityBlockLines.join(" "));
+      const correctedTime = correctKnownOcrTime(
+        facilityRow.facility,
+        timeRow.timeRange,
+      );
+
+      [facilityRow.line, timeRow.line, ...facilityBlockLines].forEach((line) =>
+        recoveredLines.add(line),
+      );
+
+      sequentialRentals.push({
+        rentalDate,
+        park: inferPark(facilityRow.facility, findKnownPark(blockText)),
+        facility: facilityRow.facility,
+        equipmentType: inferEquipmentType(facilityRow.facility),
+        startTime: correctedTime.startTime,
+        endTime: correctedTime.endTime,
+        eventName: inferEventName(facilityRow.facility, blockText),
+        eventType: "External Reservation",
+        scheduleType: inferScheduleType(facilityRow.facility, blockText),
+        organization: inferOrganization(facilityRow.facility, blockText),
+        contactName: "Rental Contact",
+        contactPhone:
+          blockText.match(/\(?\d{3}\)?\s*\d{3}[-.]\d{4}/)?.[0] ?? "",
+        permitNumber: normalizePermitNumber(blockText),
+        attendanceQuantity: "",
+        notes: "Imported from OCR text",
+      });
+    });
+  });
+
+  return { rentals: sequentialRentals, recoveredLines };
+}
+
 function mergeRecoveredLines(...lineSets: Set<string>[]) {
   return new Set(lineSets.flatMap((lineSet) => [...lineSet]));
 }
@@ -741,6 +848,27 @@ function dedupeRentals(rentals: RentalInput[]) {
     seen.add(key);
     return true;
   });
+}
+
+function isPlausibleRental(rental: RentalInput) {
+  return Boolean(
+    rental.facility.trim() &&
+      rental.park.trim() &&
+      rental.equipmentType.trim() &&
+      /(?:CP|HBP|NPP|Glynn|Diamond|Soccer|Field)/i.test(rental.facility),
+  );
+}
+
+function cleanParsedRentals(rentals: RentalInput[]) {
+  return dedupeRentals(rentals).filter(isPlausibleRental);
+}
+
+function makeSequentialReplacementKey(rental: RentalInput) {
+  if (rental.facility === "CP - Diamond #1 (Softball)") {
+    return `${rental.facility}|${rental.eventName}`;
+  }
+
+  return rental.facility;
 }
 
 export function validateParsedRentals(
@@ -1014,6 +1142,14 @@ export function parseRentalSheetTextWithDebug(
     }
 
     if (/^(DATE:|Reservation Date)/i.test(line) || isHeaderLine(line)) {
+      if (
+        currentBlock.length > 0 &&
+        blockHasTime(currentBlock) &&
+        !blockHasFacility(currentBlock)
+      ) {
+        currentBlock = [];
+      }
+
       if (!/^(DATE:|Reservation Date)/i.test(line)) {
         addSkippedLine(line);
       }
@@ -1068,6 +1204,7 @@ export function parseRentalSheetTextWithDebug(
   const tableResult = parseTableRows(lines, rentalDate);
   const noisyResult = parseNoisyBlocks(lines, rentalDate);
   const columnResult = parseColumnarRows(lines, rentalDate);
+  const sequentialResult = parseSequentialFacilityRows(lines, rentalDate);
   const skippedFacilities = new Set(
     skippedLines.flatMap((line) =>
       line
@@ -1088,7 +1225,7 @@ export function parseRentalSheetTextWithDebug(
       !tableTopUpFacilities.has(rental.facility),
   );
   const selectedFallback =
-    [tableResult, noisyResult, columnResult].sort(
+    [tableResult, noisyResult, columnResult, sequentialResult].sort(
       (firstResult, secondResult) =>
         secondResult.rentals.length - firstResult.rentals.length,
     )[0];
@@ -1114,25 +1251,51 @@ export function parseRentalSheetTextWithDebug(
             )
           );
         });
-  const combinedRentals =
+  const shouldUseSequentialRecovery =
+    /Reservation\s+(?:ter|ster)\s+Report|Page\s*:\s*24\s+Of\?/i.test(ocrText);
+  const shouldPreferSequential =
+    shouldUseSequentialRecovery &&
+    sequentialResult.rentals.length >= 3 &&
+    sequentialResult.rentals.length >=
+      cleanParsedRentals([...rentals, ...tableTopUps, ...noisyTopUps]).length;
+  const mixedCombinedRentals =
     columnResult.rentals.length > 0
-      ? dedupeRentals([
+      ? [
           ...nonColumnRentals,
           ...tableTopUps,
           ...noisyTopUps,
           ...columnResult.rentals,
-        ])
+        ]
       : shouldTopUpRentals
-        ? dedupeRentals([...rentals, ...tableTopUps, ...noisyTopUps])
+        ? [...rentals, ...tableTopUps, ...noisyTopUps]
       : rentals.length > 0
         ? rentals
-        : dedupeRentals(selectedFallback?.rentals ?? []);
+        : (selectedFallback?.rentals ?? []);
+  const sequentialReplacementKeys = new Set(
+    sequentialResult.rentals.map(makeSequentialReplacementKey),
+  );
+  const rawCombinedRentals =
+    shouldPreferSequential
+      ? sequentialResult.rentals
+      : shouldUseSequentialRecovery && sequentialResult.rentals.length >= 3
+        ? [
+            ...mixedCombinedRentals.filter(
+              (rental) =>
+                !sequentialReplacementKeys.has(
+                  makeSequentialReplacementKey(rental),
+                ),
+            ),
+            ...sequentialResult.rentals,
+          ]
+        : mixedCombinedRentals;
+  const combinedRentals = cleanParsedRentals(rawCombinedRentals);
   const recoveredLines = mergeRecoveredLines(
     shouldTopUpRentals || columnResult.rentals.length > 0
       ? mergeRecoveredLines(
           tableResult.recoveredLines,
           noisyResult.recoveredLines,
           columnResult.recoveredLines,
+          sequentialResult.recoveredLines,
         )
       : (selectedFallback?.recoveredLines ?? new Set<string>()),
   );
