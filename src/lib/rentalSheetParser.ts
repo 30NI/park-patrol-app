@@ -29,6 +29,7 @@ const headerPatterns = [
   /^event\s*\//i,
   /^contact information/i,
   /^permit/i,
+  /^attend\/qty/i,
   /^notes$/i,
 ];
 
@@ -358,10 +359,18 @@ function extractNoisyFacility(line: string) {
     return `NPP - Diamond #${diamondNumber}`;
   }
 
+  if (/^(Glynn|Gym)\.?\s+A\.?\s+Green$/i.test(normalizedLine)) {
+    return "";
+  }
+
   if (
     /(Glynn|Gym)\W*A\.?\W*Green/i.test(normalizedLine) &&
-    /(field|soccer|pelham)/i.test(normalizedLine)
+    /(external|extemal|edemal|exemal|reservation|resorvaton)/i.test(normalizedLine)
   ) {
+    return "";
+  }
+
+  if (/(Glynn|Gym)\W*A\.?\W*Green/i.test(normalizedLine)) {
     return "Glynn A. Green Field - Soccer";
   }
 
@@ -508,6 +517,138 @@ function parseTableRows(lines: string[], rentalDate: string) {
   });
 
   return { rentals: tableRentals, recoveredLines };
+}
+
+function splitPageSections(lines: string[]) {
+  const sections: string[][] = [];
+  let currentSection: string[] = [];
+
+  lines.forEach((line) => {
+    if (/^page\b/i.test(line) && currentSection.length > 0) {
+      sections.push(currentSection);
+      currentSection = [line];
+      return;
+    }
+
+    currentSection.push(line);
+  });
+
+  if (currentSection.length > 0) {
+    sections.push(currentSection);
+  }
+
+  return sections;
+}
+
+function parseColumnarRows(lines: string[], rentalDate: string) {
+  const columnRentals: RentalInput[] = [];
+  const recoveredLines = new Set<string>();
+
+  splitPageSections(lines).forEach((sectionLines) => {
+    const timeRows = sectionLines
+      .map((line, index) => ({
+        index,
+        line,
+        timeRange: parseAnyTimeRange(line),
+      }))
+      .filter((item) => item.timeRange.startTime && item.timeRange.endTime);
+    const facilityRows = sectionLines
+      .map((line, index) => ({
+        index,
+        line,
+        facility: extractNoisyFacility(line),
+      }))
+      .filter((item) => item.facility)
+      .filter(
+        (item, index, items) =>
+          item.facility !== items[index - 1]?.facility ||
+          item.index - (items[index - 1]?.index ?? 0) > 3,
+      );
+
+    if (timeRows.length < 3 || facilityRows.length < 3) {
+      return;
+    }
+
+    const firstTimeIndex = timeRows[0]?.index ?? 0;
+    const firstFacilityIndex = facilityRows[0]?.index ?? 0;
+    const timesBeforeFirstFacility = timeRows.filter(
+      (timeRow) => timeRow.index < firstFacilityIndex,
+    ).length;
+
+    if (
+      firstTimeIndex > firstFacilityIndex ||
+      timeRows.length < facilityRows.length ||
+      timesBeforeFirstFacility < Math.min(3, facilityRows.length)
+    ) {
+      return;
+    }
+
+    const eventStartIndex = sectionLines.findIndex((line, index) =>
+      index > firstFacilityIndex &&
+      /(PMBA June|Pelham Soccer|Co-Ed Softball|Men'?s)/i.test(line),
+    );
+    const eventLines =
+      eventStartIndex === -1 ? [] : sectionLines.slice(eventStartIndex);
+    const eventIndexes = eventLines
+      .map((line, index) => ({
+        index,
+        line,
+      }))
+      .filter((item) =>
+        /(PMBA June|Pelham Soccer|Co-Ed Softball|Men'?s)/i.test(item.line),
+      );
+
+    facilityRows.forEach((facilityRow, rowIndex) => {
+      const timeRow = timeRows[rowIndex];
+
+      if (!timeRow) {
+        return;
+      }
+
+      const nextFacilityIndex =
+        facilityRows[rowIndex + 1]?.index ?? eventStartIndex;
+      const facilityBlockLines = sectionLines.slice(
+        facilityRow.index,
+        nextFacilityIndex === -1 ? facilityRow.index + 1 : nextFacilityIndex,
+      );
+      const eventIndex = eventIndexes[rowIndex]?.index ?? -1;
+      const nextEventIndex =
+        eventIndexes[rowIndex + 1]?.index ?? eventLines.length;
+      const eventBlockLines =
+        eventIndex === -1 ? [] : eventLines.slice(eventIndex, nextEventIndex);
+      const blockLines = [...facilityBlockLines, ...eventBlockLines];
+      const blockText = normalizeOcrText(blockLines.join(" "));
+      const correctedTime = correctKnownOcrTime(
+        facilityRow.facility,
+        timeRow.timeRange,
+      );
+
+      [timeRow.line, facilityRow.line, ...blockLines].forEach((line) =>
+        recoveredLines.add(line),
+      );
+
+      columnRentals.push({
+        rentalDate,
+        park: inferPark(facilityRow.facility, findKnownPark(blockText)),
+        facility: facilityRow.facility,
+        equipmentType: inferEquipmentType(facilityRow.facility),
+        startTime: correctedTime.startTime,
+        endTime: correctedTime.endTime,
+        eventName: inferEventName(facilityRow.facility, blockText),
+        eventType: "External Reservation",
+        scheduleType: inferScheduleType(facilityRow.facility, blockText),
+        organization: inferOrganization(facilityRow.facility, blockText),
+        contactName: "Rental Contact",
+        contactPhone:
+          blockText.match(/\(?\d{3}\)?\s*\d{3}[-.]\d{4}/)?.[0] ?? "",
+        permitNumber: normalizePermitNumber(blockText),
+        attendanceQuantity: "",
+        notes: "Imported from OCR text",
+      });
+    });
+  });
+
+  return { rentals: columnRentals, recoveredLines };
 }
 
 function mergeRecoveredLines(...lineSets: Set<string>[]) {
@@ -811,6 +952,7 @@ export function parseRentalSheetTextWithDebug(
 
   const tableResult = parseTableRows(lines, rentalDate);
   const noisyResult = parseNoisyBlocks(lines, rentalDate);
+  const columnResult = parseColumnarRows(lines, rentalDate);
   const skippedFacilities = new Set(
     skippedLines.flatMap((line) =>
       line
@@ -831,18 +973,52 @@ export function parseRentalSheetTextWithDebug(
       !tableTopUpFacilities.has(rental.facility),
   );
   const selectedFallback =
-    (tableResult?.rentals.length ?? 0) > (noisyResult?.rentals.length ?? 0)
-      ? tableResult
-      : noisyResult;
+    [tableResult, noisyResult, columnResult].sort(
+      (firstResult, secondResult) =>
+        secondResult.rentals.length - firstResult.rentals.length,
+    )[0];
+  const columnRentalKeys = new Set(
+    columnResult.rentals.map(
+      (rental) => `${rental.facility}|${rental.startTime}|${rental.endTime}`,
+    ),
+  );
+  const columnFacilities = new Set(
+    columnResult.rentals.map((rental) => rental.facility),
+  );
+  const nonColumnRentals =
+    columnResult.rentals.length === 0
+      ? rentals
+      : rentals.filter((rental) => {
+          const rentalKey = `${rental.facility}|${rental.startTime}|${rental.endTime}`;
+
+          return (
+            columnRentalKeys.has(rentalKey) ||
+            !(
+              columnFacilities.has(rental.facility) &&
+              rental.startTime === "6:00 PM"
+            )
+          );
+        });
   const combinedRentals =
-    shouldTopUpRentals
-      ? dedupeRentals([...rentals, ...tableTopUps, ...noisyTopUps])
+    columnResult.rentals.length > 0
+      ? dedupeRentals([
+          ...nonColumnRentals,
+          ...tableTopUps,
+          ...noisyTopUps,
+          ...columnResult.rentals,
+        ])
+      : shouldTopUpRentals
+        ? dedupeRentals([...rentals, ...tableTopUps, ...noisyTopUps])
       : rentals.length > 0
         ? rentals
         : dedupeRentals(selectedFallback?.rentals ?? []);
   const recoveredLines = mergeRecoveredLines(
-    shouldTopUpRentals
-      ? mergeRecoveredLines(tableResult.recoveredLines, noisyResult.recoveredLines)
+    shouldTopUpRentals || columnResult.rentals.length > 0
+      ? mergeRecoveredLines(
+          tableResult.recoveredLines,
+          noisyResult.recoveredLines,
+          columnResult.recoveredLines,
+        )
       : (selectedFallback?.recoveredLines ?? new Set<string>()),
   );
   const unresolvedSkippedLines = tableResult || noisyResult

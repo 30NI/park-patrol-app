@@ -4,6 +4,7 @@ import { join } from "node:path";
 const testFiles = [
   "tests/rentalSheetParser.test.ts",
   "tests/jun29CleanParser.test.ts",
+  "tests/jun29RoughColumnParser.test.ts",
 ];
 const runner = process.execPath;
 const jitiCli = join("node_modules", "jiti", "lib", "jiti-cli.mjs");
