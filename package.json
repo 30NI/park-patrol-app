@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:parser": "jiti tests/rentalSheetParser.test.ts"
+    "test:parser": "node tests/runParserTests.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

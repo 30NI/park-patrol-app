@@ -399,6 +399,10 @@ function inferEventName(facility: string, blockText: string) {
     return "Pelham Soccer June 2026";
   }
 
+  if (/co-?ed|slo|slow|slo-pitch|slopitch/i.test(blockText)) {
+    return "Co-Ed Softball 2026 - Monday";
+  }
+
   if (/men|tuesday|tuosday|slo|slow/i.test(blockText)) {
     return "Men's - Tuesdays";
   }
@@ -653,35 +657,11 @@ function parseBlock(lines: string[], rentalDate: string) {
       : facilityFromBlock
         ? [facilityFromBlock]
         : [];
-  const equipmentType =
-    blockLines.find((line) => /^Field\s*-/i.test(line)) ??
-    (blockText.includes("Soccer") ? "Field - Soccer" : "Field - Baseball");
   const park = findKnownPark(blockText);
-  const scheduleType =
-    blockLines.find((line) =>
-      /(Games with Lines|No Maintenance|Soccer Field Rental|Ball Diamond)/i.test(
-        line,
-      ),
-    ) ?? "";
-  const organization =
-    blockLines.find((line) => /(Association|Club|League|PMBA)/i.test(line)) ?? "";
   const permitNumber = blockText.match(/\bR\d+\b/i)?.[0] ?? "";
   const attendanceQuantity =
     blockLines.find((line) => /^\d+$/.test(line) && line !== permitNumber) ?? "";
   const contactPhone = blockText.match(/\(?\d{3}\)?\s*\d{3}-\d{4}/)?.[0] ?? "";
-  const eventName =
-    blockLines.find(
-      (line) =>
-        !looksLikeFacility(line) &&
-        line !== equipmentType &&
-        line !== park &&
-        line !== scheduleType &&
-        line !== organization &&
-        !line.includes(contactPhone) &&
-        !line.includes(permitNumber) &&
-        !/^\d+$/.test(line) &&
-        !/Commercial|Minor|External Reservation/i.test(line),
-    ) ?? "";
 
   if (!startTime || !endTime || facilityLines.length === 0) {
     return [];
@@ -694,13 +674,13 @@ function parseBlock(lines: string[], rentalDate: string) {
       rentalDate,
     park: inferPark(facility, park),
     facility,
-    equipmentType,
+    equipmentType: inferEquipmentType(facility),
       startTime: correctedTime.startTime,
       endTime: correctedTime.endTime,
-    eventName,
+    eventName: inferEventName(facility, blockText),
     eventType: "External Reservation",
-    scheduleType,
-    organization,
+    scheduleType: inferScheduleType(facility, blockText),
+    organization: inferOrganization(facility, blockText),
     contactName: "Rental Contact",
     contactPhone,
     permitNumber,
@@ -784,6 +764,14 @@ export function parseRentalSheetTextWithDebug(
       return;
     }
 
+    if (
+      currentBlock.length === 0 &&
+      (looksLikeFacility(line) || extractNoisyFacility(line))
+    ) {
+      currentBlock = [line];
+      return;
+    }
+
     if (isTimeLine(line)) {
       if (
         currentBlock.length > 0 &&
@@ -802,7 +790,9 @@ export function parseRentalSheetTextWithDebug(
     if (
       currentBlock.length > 0 &&
       (looksLikeFacility(line) || extractNoisyFacility(line)) &&
-      blockHasRowDetails(currentBlock)
+      blockHasFacility(currentBlock) &&
+      (blockHasRowDetails(currentBlock) ||
+        (blockHasTime(currentBlock) && currentBlock.length > 2))
     ) {
       flushBlock();
       currentBlock = [line];
