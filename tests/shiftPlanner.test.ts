@@ -44,6 +44,55 @@ const rentalTimes = timeline
   .filter((task) => task.category === "rental")
   .map((task) => task.time);
 
-assert.deepEqual(rentalTimes, ["6:00 PM", "6:05 PM", "6:10 PM", "6:25 PM"]);
+assert.deepEqual(rentalTimes, ["6:00 PM", "6:00 PM", "6:00 PM", "6:15 PM"]);
 
-console.log("Shift planner staggers rental workflow checks by park.");
+const groupedTimeline = buildShiftTimeline({
+  rentals: [
+    rental("CP #1 early", "Centennial Park"),
+    {
+      ...rental("CP #1 late", "Centennial Park", "8:00 PM"),
+      facility: "CP #1 early",
+    },
+  ],
+  washroomParks: [],
+  garbageParks: [],
+  lightTasks: [],
+});
+
+const groupedRentalTasks = groupedTimeline.filter(
+  (task) => task.category === "rental",
+);
+
+assert.equal(groupedRentalTasks.length, 1);
+assert.deepEqual(groupedRentalTasks[0].targetIds, ["CP #1 early", "CP #1 late"]);
+
+const splitVisitTimeline = buildShiftTimeline({
+  rentals: [
+    {
+      ...rental("CP early", "Centennial Park", "6:00 PM"),
+      endTime: "7:00 PM",
+    },
+    {
+      ...rental("CP late", "Centennial Park", "8:00 PM"),
+      endTime: "9:00 PM",
+    },
+    rental("HBP middle", "Harold Black Park", "6:30 PM"),
+  ],
+  washroomParks: [],
+  garbageParks: [],
+  lightTasks: [],
+});
+const splitVisitTasks = splitVisitTimeline.filter(
+  (task) => task.category === "rental",
+);
+
+assert.deepEqual(
+  splitVisitTasks.map((task) => `${task.detail}:${task.time}`),
+  [
+    "CP early - Test Org:6:00 PM",
+    "HBP middle - Test Org:6:30 PM",
+    "CP late - Test Org:8:00 PM",
+  ],
+);
+
+console.log("Shift planner batches rental workflow checks by park.");

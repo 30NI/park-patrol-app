@@ -2,9 +2,8 @@ import type { LightTask } from "@/types/light";
 import type { Rental } from "@/types/rental";
 import { minutesToTime, timeToMinutes } from "./time";
 
-const lightStartTime = "8:30 PM";
+const lightStartTime = "8:00 PM";
 const lightStartMinutes = timeToMinutes(lightStartTime);
-const latestLightOnMinutes = timeToMinutes("8:55 PM");
 
 const lightCapableFacilities = [
   "HBP - Diamond #1",
@@ -30,6 +29,40 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
         timeToMinutes(rental.endTime) > lightStartMinutes,
     )
     .sort((a, b) => {
+      const parkCompare = a.park.localeCompare(b.park);
+
+      if (parkCompare !== 0) {
+        return parkCompare;
+      }
+
+      const endTimeDifference = timeToMinutes(a.endTime) - timeToMinutes(b.endTime);
+
+      return endTimeDifference !== 0
+        ? endTimeDifference
+        : a.facility.localeCompare(b.facility);
+    });
+  const onTimeByRentalId = new Map<string, string>();
+  let previousOnPark = "";
+  let cumulativeRouteMinutes = 0;
+
+  lightRentals.forEach((rental) => {
+    if (previousOnPark) {
+      cumulativeRouteMinutes += rental.park === previousOnPark ? 5 : 15;
+    }
+
+    onTimeByRentalId.set(
+      rental.id,
+      minutesToTime(lightStartMinutes + cumulativeRouteMinutes),
+    );
+    previousOnPark = rental.park;
+  });
+
+  let previousOffPark = "";
+  let previousOffMinutes: number | null = null;
+  const offTimeByRentalId = new Map<string, string>();
+
+  [...lightRentals]
+    .sort((a, b) => {
       const endTimeDifference = timeToMinutes(a.endTime) - timeToMinutes(b.endTime);
 
       if (endTimeDifference !== 0) {
@@ -38,28 +71,27 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
 
       const parkCompare = a.park.localeCompare(b.park);
 
-      if (parkCompare !== 0) {
-        return parkCompare;
-      }
+      return parkCompare !== 0
+        ? parkCompare
+        : a.facility.localeCompare(b.facility);
+    })
+    .forEach((rental) => {
+      const rentalEndMinutes = timeToMinutes(rental.endTime);
+      const travelMinutes =
+        previousOffMinutes === null
+          ? 0
+          : rental.park === previousOffPark
+            ? 0
+            : 15;
+      const scheduledOffMinutes =
+        previousOffMinutes === null
+          ? rentalEndMinutes
+          : Math.max(rentalEndMinutes, previousOffMinutes + travelMinutes);
 
-      return a.facility.localeCompare(b.facility);
+      offTimeByRentalId.set(rental.id, minutesToTime(scheduledOffMinutes));
+      previousOffPark = rental.park;
+      previousOffMinutes = scheduledOffMinutes;
     });
-
-  let previousPark = "";
-  let cumulativeRouteMinutes = 0;
-  const routeOffsets = lightRentals.map((rental) => {
-    if (previousPark !== "") {
-      cumulativeRouteMinutes += rental.park === previousPark ? 5 : 15;
-    }
-
-    previousPark = rental.park;
-
-    return cumulativeRouteMinutes;
-  });
-  const scheduledStartMinutes = Math.min(
-    lightStartMinutes,
-    latestLightOnMinutes - cumulativeRouteMinutes,
-  );
 
   return lightRentals
     .map((rental) => ({
@@ -70,19 +102,17 @@ export function getLightTasks(rentals: Rental[]): LightTask[] {
       organization: rental.organization,
       rentalStartTime: rental.startTime,
       rentalEndTime: rental.endTime,
-      scheduledOnTime: "",
-      scheduledOffTime: rental.endTime,
+      scheduledOnTime: onTimeByRentalId.get(rental.id) ?? lightStartTime,
+      scheduledOffTime: offTimeByRentalId.get(rental.id) ?? rental.endTime,
     }))
-    .flatMap((task, index) => {
-      const scheduledOnMinutes = scheduledStartMinutes + routeOffsets[index];
-
-      if (scheduledOnMinutes >= timeToMinutes(task.scheduledOffTime)) {
+    .flatMap((task) => {
+      if (
+        timeToMinutes(task.scheduledOnTime) >=
+        timeToMinutes(task.scheduledOffTime)
+      ) {
         return [];
       }
 
-      return [{
-        ...task,
-        scheduledOnTime: minutesToTime(scheduledOnMinutes),
-      }];
+      return [task];
     });
 }

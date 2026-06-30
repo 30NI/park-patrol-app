@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { parks, type ParkName } from "@/constants/parks";
 import { getLightTasks } from "@/lib/lights";
 import { buildShiftTimeline } from "@/lib/shiftPlanner";
-import { minutesToTime, timeToMinutes } from "@/lib/time";
+import { timeToMinutes } from "@/lib/time";
 import type { ShiftTimelineTask } from "@/types/shift";
 import { usePatrol } from "./context/PatrolContext";
 
@@ -21,6 +21,7 @@ const dashboardWashroomParks: ParkName[] = [
   "Harold Black Park",
   "Marlene Streit Stewart Park",
 ];
+const fixedDashboardTaskIds = ["washrooms-start", "garbage-early", "washrooms-end"];
 
 function parseDisplayTime(time: string) {
   const match = time.match(/^(\d{1,2})(?::(\d{2}))?\s*([AP])M$/i);
@@ -58,79 +59,58 @@ function formatTimelineTime(task: ShiftTimelineTask) {
 }
 
 function normalizeTimelineTime(time: string) {
-  const minutes = timeToMinutes(time);
+  const parsedTime = parseDisplayTime(time);
 
-  if (minutes === 0 && time !== "12:00 AM") {
+  if (!parsedTime) {
     return null;
   }
 
-  return minutesToTime(minutes);
+  return `${parsedTime.hour}:${parsedTime.minute} ${parsedTime.period}`;
+}
+
+function getRentalFieldClass(text: string, isDone: boolean) {
+  const fieldBase = /soccer/i.test(text)
+    ? "border-white bg-[#6fa85f]"
+    : "border-white bg-[#a87443]";
+
+  return `${fieldBase} ${isDone ? "ring-2 ring-green-500" : ""}`;
 }
 
 function applyRouteEdits(
   timeline: ShiftTimelineTask[],
-  rentals: ReturnType<typeof usePatrol>["rentals"],
   routeTaskOrder: string[],
   routeTaskTimes: Record<string, string>,
 ) {
-  const rentalByTaskId = new Map(
-    rentals.map((rental) => [`rental-check-${rental.id}`, rental]),
-  );
-  const fixedTasks = timeline.filter((task) => task.category !== "rental");
-  const rentalTasks = timeline.filter((task) => task.category === "rental");
-  const rentalOrderMap = new Map(
+  const orderedTaskIds = new Map(
     routeTaskOrder.map((taskId, index) => [taskId, index]),
   );
-  const orderedRentalTasks =
+  const orderedTimeline =
     routeTaskOrder.length === 0
-      ? rentalTasks
+      ? timeline
       : [
-          ...rentalTasks
-            .filter((task) => rentalOrderMap.has(task.id))
+          ...timeline
+            .filter((task) => orderedTaskIds.has(task.id))
             .sort(
               (a, b) =>
-                (rentalOrderMap.get(a.id) ?? 0) -
-                (rentalOrderMap.get(b.id) ?? 0),
+                (orderedTaskIds.get(a.id) ?? 0) -
+                (orderedTaskIds.get(b.id) ?? 0),
             ),
-          ...rentalTasks.filter((task) => !rentalOrderMap.has(task.id)),
+          ...timeline.filter((task) => !orderedTaskIds.has(task.id)),
         ];
-  let previousPark: string | null = null;
-  let previousWorkflowMinutes: number | null = null;
 
-  const editedRentalTasks = orderedRentalTasks.map((task) => {
-    const rental = rentalByTaskId.get(task.id);
-    const rentalStartMinutes = rental ? timeToMinutes(rental.startTime) : task.sortOrder;
-    const travelMinutes =
-      previousWorkflowMinutes === null
-        ? 0
-        : rental?.park === previousPark
-          ? 5
-          : 15;
-    const workflowMinutes =
-      previousWorkflowMinutes === null
-        ? rentalStartMinutes
-        : Math.max(rentalStartMinutes, previousWorkflowMinutes + travelMinutes);
-    const overrideTime = routeTaskTimes[task.id];
-    const overrideMinutes = overrideTime ? timeToMinutes(overrideTime) : null;
-    const finalMinutes =
-      overrideMinutes !== null &&
-      (overrideMinutes !== 0 || overrideTime === "12:00 AM")
-        ? overrideMinutes
-        : workflowMinutes;
+  return orderedTimeline.map((task) => {
+    const editedTime = routeTaskTimes[task.id];
 
-    previousPark = rental?.park ?? previousPark;
-    previousWorkflowMinutes = finalMinutes;
+    if (!editedTime) {
+      return task;
+    }
 
     return {
       ...task,
-      time: minutesToTime(finalMinutes),
-      sortOrder: finalMinutes,
+      time: editedTime,
+      sortOrder: timeToMinutes(editedTime),
     };
   });
-
-  return [...fixedTasks, ...editedRentalTasks].sort(
-    (a, b) => a.sortOrder - b.sortOrder,
-  );
 }
 
 export default function Home() {
@@ -140,7 +120,6 @@ export default function Home() {
     garbageCheckedAt,
     endShift,
     lightTaskStates,
-    resetRouteEdits,
     routeTaskOrder,
     routeTaskTimes,
     setRouteTaskOrder,
@@ -148,6 +127,7 @@ export default function Home() {
     shiftEndedAt,
     shiftStartedAt,
     startShift,
+    workerName,
   } = usePatrol();
   const [isEditingRoute, setIsEditingRoute] = useState(false);
   const [isStartOpen, setIsStartOpen] = useState(false);
@@ -173,9 +153,24 @@ export default function Home() {
       }),
     [lightTasks, rentals],
   );
+  const fixedDashboardTasks = useMemo(
+    () =>
+      automaticTimeline.filter((task) =>
+        fixedDashboardTaskIds.includes(task.id),
+      ),
+    [automaticTimeline],
+  );
+  const automaticRouteTimeline = useMemo(
+    () =>
+      automaticTimeline.filter(
+        (task) => !fixedDashboardTaskIds.includes(task.id),
+      ),
+    [automaticTimeline],
+  );
   const timeline = useMemo(
-    () => applyRouteEdits(automaticTimeline, rentals, routeTaskOrder, routeTaskTimes),
-    [automaticTimeline, rentals, routeTaskOrder, routeTaskTimes],
+    () =>
+      applyRouteEdits(automaticRouteTimeline, routeTaskOrder, routeTaskTimes),
+    [automaticRouteTimeline, routeTaskOrder, routeTaskTimes],
   );
 
   useEffect(() => {
@@ -208,8 +203,11 @@ export default function Home() {
     }
 
     if (task.category === "rental" && task.targetId) {
-      return (
-        rentals.find((rental) => rental.id === task.targetId)?.checkedIn ?? false
+      const targetIds = task.targetIds ?? [task.targetId];
+
+      return targetIds.every(
+        (targetId) =>
+          rentals.find((rental) => rental.id === targetId)?.checkedIn ?? false,
       );
     }
 
@@ -225,9 +223,7 @@ export default function Home() {
   }
 
   function moveRouteTask(taskId: string, direction: -1 | 1) {
-    const currentOrder = timeline
-      .filter((task) => task.category === "rental")
-      .map((task) => task.id);
+    const currentOrder = timeline.map((task) => task.id);
     const currentIndex = currentOrder.indexOf(taskId);
     const nextIndex = currentIndex + direction;
 
@@ -237,18 +233,9 @@ export default function Home() {
 
     const nextOrder = [...currentOrder];
     const [movedTask] = nextOrder.splice(currentIndex, 1);
+
     nextOrder.splice(nextIndex, 0, movedTask);
     setRouteTaskOrder(nextOrder);
-  }
-
-  function adjustRouteTaskTime(task: ShiftTimelineTask, minutes: number) {
-    const currentMinutes = timeToMinutes(task.time);
-
-    if (currentMinutes === 0 && task.time !== "12:00 AM") {
-      return;
-    }
-
-    setRouteTaskTime(task.id, minutesToTime(currentMinutes + minutes));
   }
 
   function editRouteTaskTime(task: ShiftTimelineTask) {
@@ -265,13 +252,16 @@ export default function Home() {
       return;
     }
 
-    setRouteTaskTime(task.id, normalizedTime);
-  }
-
-  function resetRoute() {
-    if (window.confirm("Reset the dashboard back to the automatic route?")) {
-      resetRouteEdits();
+    if (
+      timeline.some(
+        (otherTask) => otherTask.id !== task.id && otherTask.time === normalizedTime,
+      )
+    ) {
+      window.alert("Another task already has that time.");
+      return;
     }
+
+    setRouteTaskTime(task.id, normalizedTime);
   }
 
   function getSignaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -414,67 +404,82 @@ export default function Home() {
   }
 
   return (
-    <main className="space-y-6 p-4">
-      <header className="pt-10">
-        <p className="text-sm font-bold uppercase tracking-wide text-slate-500">
+    <main className="space-y-4 p-4">
+      <header className="pt-8 text-center">
+        <p className="display-title text-sm font-black uppercase text-slate-600">
           {formatter.format(new Date())}
         </p>
-        <h1 className="mt-3 text-4xl font-bold leading-tight">Hello B</h1>
+        <h1 className="display-title mt-3 text-4xl font-black leading-tight">
+          Hello {workerName || "_____"}
+        </h1>
       </header>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="grid grid-cols-3 gap-3">
+        {fixedDashboardTasks.map((task) => {
+          const isDone = isTimelineTaskDone(task);
+          const isWashroomTask =
+            task.id === "washrooms-start" || task.id === "washrooms-end";
+          const cardClassName = isWashroomTask
+            ? "border-[#0b1f4d] bg-[#2563eb] text-white"
+            : "border-slate-950 bg-slate-300 text-slate-950";
+          const timeClassName = isWashroomTask
+            ? "border-[#0b1f4d] bg-white text-[#0b1f4d]"
+            : "border-slate-950 bg-white text-slate-950";
+
+          return (
+            <Link
+              key={task.id}
+              href={task.href}
+              className={`flex aspect-square min-h-28 flex-col justify-between rounded-2xl border-[3px] p-3 shadow-sm transition active:scale-[0.98] ${cardClassName} ${
+                isDone ? "ring-4 ring-green-400/80" : ""
+              }`}
+            >
+              <span className="text-sm font-black leading-tight">
+                {task.id === "washrooms-start"
+                  ? "Washrooms-Start"
+                  : task.id === "washrooms-end"
+                    ? "Washroom-End"
+                    : "Garbages"}
+              </span>
+              <span
+                className={`self-start rounded-full border px-2 py-1 text-xs font-bold ${timeClassName}`}
+              >
+                {formatTimelineTime(task)}
+              </span>
+            </Link>
+          );
+        })}
+      </section>
+
+      <section className="rounded-2xl bg-[#b9e4f7] p-0">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-2xl font-bold">Shift Timeline</h2>
           <button
             type="button"
             onClick={() => setIsEditingRoute((current) => !current)}
-            className="min-h-11 rounded-lg bg-slate-950 px-4 text-sm font-bold text-white"
+            className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white"
           >
             {isEditingRoute ? "Done" : "Edit Route"}
           </button>
         </div>
-        {isEditingRoute ? (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={resetRoute}
-              className="col-span-2 min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-950"
-            >
-              Reset Auto Route
-            </button>
-          </div>
-        ) : null}
-        <div className="mt-6 space-y-4">
+        <div className="mt-3 space-y-3">
           {timeline.map((step, index) => {
             const isDone = isTimelineTaskDone(step);
-            const rentalTimeline = timeline.filter(
-              (task) => task.category === "rental",
-            );
-            const rentalIndex = rentalTimeline.findIndex(
-              (task) => task.id === step.id,
-            );
+            const isLightsOffTask =
+              step.category === "lights" && step.title === "Turn Lights Off";
             const timeChipClassName = `flex min-h-9 items-center justify-center rounded-full border px-3 text-sm font-bold ${
               isDone
                 ? "border-green-600 bg-white text-green-800"
+                : isLightsOffTask
+                  ? "border-[#facc15] bg-slate-950 text-[#facc15]"
                 : "border-slate-300 bg-slate-50 text-slate-700"
             }`;
             const cardContent = (
-              <div className="grid grid-cols-[2.75rem_minmax(4.75rem,auto)_1fr] items-start gap-3">
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-lg font-bold ${
-                    isDone
-                      ? "border-green-600 bg-white text-green-800"
-                      : "border-slate-300 bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  {isDone ? "OK" : "="}
-                </span>
-                {isEditingRoute && step.category === "rental" ? (
+              <div className="grid grid-cols-[minmax(4.75rem,auto)_1fr] items-start gap-4">
+                {isEditingRoute ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      editRouteTaskTime(step);
-                    }}
+                    onClick={() => editRouteTaskTime(step)}
                     className={timeChipClassName}
                   >
                     {step.time ? formatTimelineTime(step) : index + 1}
@@ -486,61 +491,61 @@ export default function Home() {
                 )}
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold leading-snug">{step.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{step.detail}</p>
+                  <p
+                    className={`mt-1 text-sm ${
+                      isLightsOffTask ? "text-yellow-100" : "text-slate-600"
+                    }`}
+                  >
+                    {step.detail}
+                  </p>
                 </div>
               </div>
             );
-            const cardClassName = `block rounded-lg border p-4 shadow-sm transition active:scale-[0.99] ${
-              isDone
-                ? "border-green-500 bg-green-50"
-                : "border-slate-200 bg-white"
-            }`;
+            const cardClassName =
+              step.category === "rental"
+                ? `block rounded-2xl border-[6px] p-4 shadow-sm transition active:scale-[0.99] ${getRentalFieldClass(
+                    `${step.title} ${step.detail}`,
+                    isDone,
+                  )}`
+                : step.category === "lights"
+                  ? step.title === "Turn Lights Off"
+                    ? `block rounded-2xl border-[4px] border-[#facc15] bg-slate-950 p-4 text-[#facc15] shadow-sm transition active:scale-[0.99] ${
+                        isDone ? "ring-2 ring-green-500" : ""
+                      }`
+                    : `block rounded-2xl border-[4px] border-slate-950 bg-[#facc15] p-4 shadow-sm transition active:scale-[0.99] ${
+                        isDone ? "ring-2 ring-green-500" : ""
+                      }`
+                : `block rounded-2xl border p-4 shadow-sm transition active:scale-[0.99] ${
+                    isDone
+                      ? "border-green-500 bg-green-50"
+                      : "border-slate-200 bg-white"
+                  }`;
 
             return isEditingRoute ? (
               <article key={step.id} className={cardClassName}>
-                {cardContent}
-                {step.category === "rental" ? (
-                  <div className="mt-4 grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-[1fr_auto] items-start gap-3">
+                  {cardContent}
+                  <div className="grid gap-2">
                     <button
                       type="button"
                       onClick={() => moveRouteTask(step.id, -1)}
-                      disabled={rentalIndex === 0}
-                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-950 disabled:opacity-40"
-                      aria-label={`Move ${step.title} earlier`}
+                      disabled={index === 0}
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-xl font-black text-slate-950 disabled:opacity-35"
+                      aria-label={`Move ${step.title} up`}
                     >
-                      Earlier
+                      ↑
                     </button>
                     <button
                       type="button"
                       onClick={() => moveRouteTask(step.id, 1)}
-                      disabled={rentalIndex === rentalTimeline.length - 1}
-                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-950 disabled:opacity-40"
-                      aria-label={`Move ${step.title} later`}
+                      disabled={index === timeline.length - 1}
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-xl font-black text-slate-950 disabled:opacity-35"
+                      aria-label={`Move ${step.title} down`}
                     >
-                      Later
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => adjustRouteTaskTime(step, 5)}
-                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-950"
-                      aria-label={`Move ${step.title} five minutes later`}
-                    >
-                      +5 min
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => adjustRouteTaskTime(step, 15)}
-                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-950"
-                      aria-label={`Move ${step.title} fifteen minutes later`}
-                    >
-                      +15 min
+                      ↓
                     </button>
                   </div>
-                ) : (
-                  <p className="mt-4 rounded-lg bg-slate-100 p-3 text-sm font-bold text-slate-600">
-                    Locked
-                  </p>
-                )}
+                </div>
               </article>
             ) : (
               <Link

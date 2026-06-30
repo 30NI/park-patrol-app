@@ -13,9 +13,14 @@
 }
 
 body {
-  background: #f1f5f9;
+  background: #b9e4f7;
   color: #020617;
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+.display-title {
+  font-family: "Trebuchet MS", var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  letter-spacing: 0;
 }
 
 button,

@@ -12,21 +12,9 @@ const washroomParks: { park: ParkName; label: string }[] = [
 ];
 
 const cardStyles: Record<TimedCheckStatus, string> = {
-  Green: "border-green-500 bg-green-50",
-  Yellow: "border-yellow-400 bg-yellow-50",
-  Red: "border-red-500 bg-red-50",
-};
-
-const badgeStyles: Record<TimedCheckStatus, string> = {
-  Green: "border-green-600 bg-white text-green-800",
-  Yellow: "border-yellow-500 bg-white text-yellow-800",
-  Red: "border-red-600 bg-white text-red-800",
-};
-
-const statusText: Record<TimedCheckStatus, string> = {
-  Green: "Checked within 2 hours",
-  Yellow: "Checked 2-4 hours ago",
-  Red: "Checked 4+ hours ago",
+  Green: "border-green-800 bg-green-500 text-white",
+  Yellow: "border-yellow-700 bg-yellow-400 text-slate-950",
+  Red: "border-red-900 bg-red-500 text-white",
 };
 
 const timeFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -43,6 +31,7 @@ export default function WashroomsPage() {
     undoWashroom,
   } = usePatrol();
   const [blockedPark, setBlockedPark] = useState<ParkName | null>(null);
+  const [openMenuPark, setOpenMenuPark] = useState<ParkName | null>(null);
 
   function handleCheck(park: ParkName) {
     const result = checkWashroom(park);
@@ -53,67 +42,79 @@ export default function WashroomsPage() {
     if (window.confirm("Undo this washroom check?")) {
       undoWashroom(park);
       setBlockedPark(null);
+      setOpenMenuPark(null);
     }
   }
 
   return (
     <main className="space-y-4 p-4">
-      <header className="pt-2">
-        <h1 className="text-3xl font-bold">Washrooms</h1>
-        <p className="mt-1 text-slate-600">
-          Tap a washroom after checking it. Status ages automatically.
-        </p>
+      <header className="pt-2 text-center">
+        <h1 className="display-title text-4xl font-black">Washrooms</h1>
       </header>
 
-      <div className="space-y-3">
-        {washroomParks.map(({ park, label }) => {
+      {blockedPark ? (
+        <p className="rounded-2xl border-4 border-white bg-white/80 p-3 text-sm font-black text-slate-800 shadow-sm">
+          {blockedPark} was already checked within the last 30 minutes.
+        </p>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-3">
+        {washroomParks.map(({ park, label }, index) => {
           const status = washroomStatuses[park];
           const checkedAt = washroomCheckedAt[park];
           const canUndo = canUndoTimedCheck(checkedAt);
-          const isBlocked = blockedPark === park;
+          const isLastOddTile =
+            washroomParks.length % 2 === 1 && index === washroomParks.length - 1;
 
           return (
             <article
               key={park}
-              className={`rounded-lg border p-4 shadow-sm ${
-                status ? cardStyles[status] : "border-slate-200 bg-white"
+              className={`relative aspect-square min-h-44 rounded-2xl border-[6px] p-3 shadow-sm ${
+                isLastOddTile ? "col-span-2 mx-auto w-[calc(50%-0.375rem)]" : ""
+              } ${
+                status
+                  ? cardStyles[status]
+                  : "border-[#0b1f4d] bg-[#2563eb] text-white"
               }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold">{label}</h2>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {status ? statusText[status] : "Not checked this shift"}
-                  </p>
-                  {checkedAt ? (
-                    <p className="mt-1 text-sm text-slate-600">
-                      Last checked {timeFormatter.format(new Date(checkedAt))}
-                    </p>
-                  ) : null}
-                  {isBlocked ? (
-                    <p className="mt-2 text-sm font-semibold text-slate-800">
-                      Already checked within the last 30 minutes.
-                    </p>
-                  ) : null}
-                </div>
-                <span
-                  className={`rounded-full border px-3 py-1 text-sm font-bold ${
-                    status
-                      ? badgeStyles[status]
-                      : "border-slate-300 bg-slate-50 text-slate-600"
-                  }`}
-                >
-                  {status ?? "New"}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenMenuPark((current) => (current === park ? null : park))
+                }
+                className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-lg font-black text-[#0b1f4d] shadow-sm"
+                aria-label={`Open washroom options for ${park}`}
+              >
+                ...
+              </button>
 
               <button
                 type="button"
-                onClick={() => (canUndo ? handleUndo(park) : handleCheck(park))}
-                className="mt-4 min-h-14 w-full rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
+                onClick={() => handleCheck(park)}
+                className="flex h-full w-full flex-col items-start justify-between rounded-xl text-left transition active:scale-[0.98]"
               >
-                {canUndo ? "Undo Check" : "Check Washroom"}
+                <span className="pr-10 text-lg font-black leading-tight">
+                  {label}
+                </span>
+                <span className="rounded-full border-2 border-[#0b1f4d] bg-white px-3 py-1.5 text-sm font-black text-[#0b1f4d] shadow-sm">
+                  {checkedAt
+                    ? timeFormatter.format(new Date(checkedAt))
+                    : "Check Washroom"}
+                </span>
               </button>
+
+              {openMenuPark === park ? (
+                <div className="absolute right-3 top-14 z-30 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => handleUndo(park)}
+                    disabled={!canUndo}
+                    className="block min-h-10 w-full rounded-lg px-3 text-left text-xs font-bold text-slate-950 disabled:text-slate-300"
+                  >
+                    Undo Check
+                  </button>
+                </div>
+              ) : null}
             </article>
           );
         })}

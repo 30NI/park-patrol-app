@@ -8,4 +8,5 @@ export type ShiftTimelineTask = {
   detail: string;
   href: string;
   targetId?: string;
+  targetIds?: string[];
 };

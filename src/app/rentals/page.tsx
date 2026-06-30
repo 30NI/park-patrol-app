@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Rental, RentalInput } from "@/types/rental";
 import {
@@ -46,13 +47,6 @@ function sortRentalsByStartTime(a: Rental, b: Rental) {
   return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
 }
 
-function isGameRental(rental: Rental) {
-  const searchText =
-    `${rental.notes} ${rental.facility} ${rental.eventName} ${rental.scheduleType}`.toLowerCase();
-
-  return searchText.includes("game");
-}
-
 function createBlankReviewRental(): RentalInput {
   return {
     rentalDate: "",
@@ -71,6 +65,16 @@ function createBlankReviewRental(): RentalInput {
     attendanceQuantity: "",
     notes: "Added during review",
   };
+}
+
+function getRentalFieldClass(rental: Rental | RentalInput, isDone = false) {
+  const fieldText =
+    `${rental.equipmentType} ${rental.facility} ${rental.scheduleType}`.toLowerCase();
+  const fieldBase = fieldText.includes("soccer")
+    ? "border-white bg-[#6fa85f]"
+    : "border-white bg-[#a87443]";
+
+  return `${fieldBase} ${isDone ? "ring-2 ring-green-500" : ""}`;
 }
 
 async function preprocessImageForOcr(file: File) {
@@ -128,7 +132,6 @@ export default function RentalsPage() {
     undoRentalGrooming,
     importRentals,
     deleteRental,
-    clearRentals,
     addActivity,
   } = usePatrol();
   const [groomingRental, setGroomingRental] = useState<Rental | null>(null);
@@ -140,6 +143,7 @@ export default function RentalsPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
   const [reviewRentals, setReviewRentals] = useState<RentalInput[]>([]);
+  const [openMenuRentalId, setOpenMenuRentalId] = useState<string | null>(null);
   const [ocrDebug, setOcrDebug] = useState<{
     rawText: string;
     skippedLines: string[];
@@ -149,7 +153,6 @@ export default function RentalsPage() {
   const [reviewValidation, setReviewValidation] =
     useState<RentalSheetValidationResult | null>(null);
   const sortedRentals = rentals.slice().sort(sortRentalsByStartTime);
-  const checkedCount = rentals.filter((rental) => rental.checkedIn).length;
 
   useEffect(() => {
     selectedImagesRef.current = selectedImages;
@@ -167,6 +170,7 @@ export default function RentalsPage() {
   function handleUndo(rentalId: string) {
     if (window.confirm("Undo this rental check?")) {
       undoRental(rentalId);
+      setOpenMenuRentalId(null);
     }
   }
 
@@ -304,19 +308,7 @@ export default function RentalsPage() {
   function handleDeleteRental(rental: Rental) {
     if (window.confirm(`Delete ${rental.facility}?`)) {
       deleteRental(rental.id);
-    }
-  }
-
-  function handleClearRentals() {
-    if (
-      rentals.length > 0 &&
-      window.confirm(`Clear all ${rentals.length} rental${rentals.length === 1 ? "" : "s"}?`)
-    ) {
-      clearRentals();
-      setReviewRentals([]);
-      setOcrDebug(null);
-      setReviewValidation(null);
-      setOcrMessage("Rentals cleared.");
+      setOpenMenuRentalId(null);
     }
   }
 
@@ -458,12 +450,16 @@ export default function RentalsPage() {
 
   return (
     <main className="space-y-4 p-4">
-      <header className="pt-2">
-        <h1 className="text-3xl font-bold">Rentals</h1>
-        <p className="mt-1 text-slate-600">
-          Confirm each rental is on the correct field.
-        </p>
+      <header className="pt-2 text-center">
+        <h1 className="display-title text-4xl font-black">Rentals</h1>
       </header>
+
+      <Link
+        href="/rentals/new"
+        className="flex min-h-14 w-full items-center justify-center rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
+      >
+        Manual Entry
+      </Link>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-bold">Import Rental Sheet</h2>
@@ -637,7 +633,9 @@ export default function RentalsPage() {
               {reviewRentals.map((rental, index) => (
                 <article
                   key={`${rental.facility}-${index}`}
-                  className="rounded-lg border border-slate-200 bg-white p-3"
+                  className={`rounded-lg border-[6px] p-3 shadow-sm ${getRentalFieldClass(
+                    rental,
+                  )}`}
                 >
                   <div className="grid grid-cols-2 gap-2">
                     <label className="col-span-2 block">
@@ -771,114 +769,101 @@ export default function RentalsPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold">Rental Checks</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-600">
-              {checkedCount}/{rentals.length} checked
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleClearRentals}
-            disabled={rentals.length === 0}
-            className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-950 shadow-sm disabled:opacity-50"
-          >
-            Clear
-          </button>
-        </div>
-      </section>
-
-      <div className="space-y-3">
+      <div>
         {sortedRentals.length === 0 ? (
           <section className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm">
             <p className="text-lg font-bold">No rentals entered</p>
             <p className="mt-2 text-sm text-slate-600">
-              Use Dashboard to enter tonight&apos;s schedule manually.
+              Scan a sheet or add a rental manually.
             </p>
           </section>
         ) : null}
 
-        {sortedRentals.map((rental) => (
-          <article
-            key={rental.id}
-            className={`rounded-lg border p-4 shadow-sm ${
-              rental.checkedIn
-                ? "border-green-500 bg-green-50"
-                : "border-slate-200 bg-white"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">{rental.facility}</h2>
-                <p className="mt-1 text-sm font-semibold text-slate-700">
-                  {rental.startTime} - {rental.endTime}
-                </p>
-              </div>
-              <span
-                className={`rounded-full border px-3 py-1 text-sm font-bold ${
-                  rental.checkedIn
-                    ? "border-green-600 bg-white text-green-800"
-                    : "border-slate-300 bg-slate-50 text-slate-600"
-                }`}
+        {sortedRentals.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3">
+            {sortedRentals.map((rental) => (
+              <article
+                key={rental.id}
+                className={`relative flex min-h-72 flex-col justify-between rounded-2xl border-[6px] p-4 shadow-sm ${getRentalFieldClass(
+                  rental,
+                  rental.checkedIn,
+                )}`}
               >
-                {rental.checkedIn ? "Checked" : "Open"}
-              </span>
-            </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenMenuRentalId((current) =>
+                      current === rental.id ? null : rental.id,
+                    )
+                  }
+                  className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-lg font-black text-slate-700 shadow-sm"
+                  aria-label={`Open rental options for ${rental.facility}`}
+                >
+                  ...
+                </button>
 
-            <div className="mt-3 space-y-1 text-sm text-slate-700">
-              <p>{rental.park}</p>
-              <p>{rental.eventName}</p>
-              <p>{rental.scheduleType}</p>
-              <p>{rental.organization}</p>
-              {rental.permitNumber ? (
-                <p className="text-slate-600">
-                  Permit {rental.permitNumber}
-                  {rental.attendanceQuantity
-                    ? ` - Qty ${rental.attendanceQuantity}`
-                    : ""}
-                </p>
-              ) : null}
-              {rental.notes ? <p className="text-slate-600">{rental.notes}</p> : null}
-            </div>
+                {openMenuRentalId === rental.id ? (
+                  <div className="absolute right-3 top-14 z-10 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => handleUndo(rental.id)}
+                      disabled={!rental.checkedIn}
+                      className="block min-h-10 w-full rounded-lg px-3 text-left text-xs font-bold text-slate-950 disabled:text-slate-300"
+                    >
+                      Undo Check
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRental(rental)}
+                      className="block min-h-10 w-full rounded-lg px-3 text-left text-xs font-bold text-slate-950"
+                    >
+                      Delete Rental
+                    </button>
+                  </div>
+                ) : null}
 
-            {isGameRental(rental) ? (
-              <button
-                type="button"
-                onClick={() =>
-                  rental.groomingStatus
-                    ? handleUndoGrooming(rental.id)
-                    : setGroomingRental(rental)
-                }
-                className="mt-4 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition active:scale-[0.99]"
-              >
-                {rental.groomingStatus === "alreadyGroomed"
-                  ? "Already Groomed"
-                  : rental.groomingStatus === "groomedOnShift"
-                    ? "Groomed on Shift"
-                    : "Groomed"}
-              </button>
-            ) : null}
+                <div className="min-h-28 pr-10">
+                  <h2 className="text-base font-black leading-tight text-slate-950">
+                    {rental.facility}
+                  </h2>
+                  <p className="mt-2 inline-flex min-w-44 max-w-full justify-center whitespace-nowrap rounded-full bg-white/90 px-4 py-1.5 text-xs font-black text-slate-800 shadow-sm">
+                    {rental.startTime} - {rental.endTime}
+                  </p>
+                </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                rental.checkedIn ? handleUndo(rental.id) : checkRental(rental.id)
-              }
-              className="mt-4 min-h-14 w-full rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
-            >
-              {rental.checkedIn ? "Undo Check" : "Check Rental"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDeleteRental(rental)}
-              className="mt-2 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition active:scale-[0.99]"
-            >
-              Delete Rental
-            </button>
-          </article>
-        ))}
+                <div className="grid gap-3">
+                  <button
+                    type="button"
+                    onClick={() => checkRental(rental.id)}
+                    disabled={rental.checkedIn}
+                    className={`min-h-14 rounded-xl px-3 text-sm font-black shadow-sm transition active:scale-[0.98] ${
+                      rental.checkedIn
+                        ? "bg-slate-200 text-slate-500"
+                        : "bg-slate-950 text-white"
+                    }`}
+                  >
+                    {rental.checkedIn ? "Checked" : "Check Rental"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      rental.groomingStatus
+                        ? handleUndoGrooming(rental.id)
+                        : setGroomingRental(rental)
+                    }
+                    className={`min-h-14 rounded-xl px-3 text-sm font-black shadow-sm transition active:scale-[0.98] ${
+                      rental.groomingStatus
+                        ? "bg-white text-slate-950"
+                        : "bg-slate-950 text-white"
+                    }`}
+                  >
+                    {rental.groomingStatus ? "Groomed" : "Groomed"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {groomingRental ? (

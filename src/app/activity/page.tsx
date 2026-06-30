@@ -249,42 +249,44 @@ export default function ActivityPage() {
 
   return (
     <main className="space-y-4 p-4">
-      <header className="pt-2 no-print">
-        <h1 className="text-3xl font-bold">Log</h1>
+      <header className="pt-2 text-center no-print">
+        <h1 className="display-title text-4xl font-black">Log</h1>
       </header>
 
-      <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm no-print">
+      <section className="grid gap-3 no-print">
         <button
           type="button"
-          onClick={generateLightReport}
-          className="min-h-16 rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
+          onClick={() => setIsNoteOpen(true)}
+          className="flex min-h-32 items-center gap-4 rounded-2xl border-4 border-white bg-[#f5b971] p-4 text-left shadow-sm transition active:scale-[0.99]"
         >
-          Generate Light Report
+          <span className="text-5xl" aria-hidden="true">
+            📝
+          </span>
+          <span className="text-xl font-black text-slate-950">Leave Note</span>
         </button>
         <button
           type="button"
           onClick={generateShiftReport}
-          className="min-h-16 rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
+          className="flex min-h-32 items-center gap-4 rounded-2xl border-4 border-white bg-[#c8d7ee] p-4 text-left shadow-sm transition active:scale-[0.99]"
         >
-          Generate Shift Report
+          <span className="text-5xl" aria-hidden="true">
+            🖨️
+          </span>
+          <span className="text-xl font-black text-slate-950">
+            Generate Shift Report
+          </span>
         </button>
         <button
           type="button"
-          onClick={() => setIsNoteOpen(true)}
-          className="min-h-16 rounded-lg border border-slate-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm transition active:scale-[0.99]"
+          onClick={generateLightReport}
+          className="flex min-h-32 items-center gap-4 rounded-2xl border-4 border-white bg-[#facc15] p-4 text-left shadow-sm transition active:scale-[0.99]"
         >
-          Leave Note
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm("Clear all local Park Patrol data on this device?")) {
-              clearLocalData();
-            }
-          }}
-          className="min-h-14 rounded-lg border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm"
-        >
-          Clear Local Test Data
+          <span className="text-5xl" aria-hidden="true">
+            💡
+          </span>
+          <span className="text-xl font-black text-slate-950">
+            Generate Light Report
+          </span>
         </button>
       </section>
 
@@ -456,6 +458,17 @@ export default function ActivityPage() {
           </section>
         </div>
       ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          if (window.confirm("Clear all local Park Patrol data on this device?")) {
+            clearLocalData();
+          }
+        }}
+        className="mt-8 min-h-14 w-full rounded-lg border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm no-print"
+      >
+        Clear Local Test Data
+      </button>
     </main>
   );
 }

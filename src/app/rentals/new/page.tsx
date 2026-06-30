@@ -191,7 +191,7 @@ export default function NewRentalPage() {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/rentals")}
             className="min-h-14 rounded-lg border border-slate-300 bg-white px-4 font-bold text-slate-950 shadow-sm"
           >
             Cancel

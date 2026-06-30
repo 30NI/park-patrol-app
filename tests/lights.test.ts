@@ -64,7 +64,28 @@ assert.ok(
 );
 
 assert.ok(
+  lightTasks.some((task) => task.scheduledOnTime === "8:00 PM"),
+  "Light-on route should start at 8 PM",
+);
+
+const cpOnTimes = new Set(
+  lightTasks
+    .filter((task) => task.park === "Centennial Park")
+    .map((task) => task.scheduledOnTime),
+);
+
+assert.ok(cpOnTimes.size > 1);
+
+[...cpOnTimes].forEach((time) => {
+  assert.ok(timeToMinutes(time) >= timeToMinutes("8:00 PM"));
+});
+
+const cpOnMinutes = [...cpOnTimes].map(timeToMinutes).sort((a, b) => a - b);
+
+assert.ok(cpOnMinutes.some((time, index) => time - cpOnMinutes[index - 1] === 5));
+
+assert.ok(
   lightTasks.some((task) => task.facility === "CP - Diamond #3 (Hardball)"),
 );
 
-console.log("Light planner avoids nonsensical late lights-on tasks.");
+console.log("Light planner buffers same-park light routes.");
