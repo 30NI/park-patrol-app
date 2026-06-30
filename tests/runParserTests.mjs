@@ -6,6 +6,7 @@ const testFiles = [
   "tests/jun29CleanParser.test.ts",
   "tests/jun29RoughColumnParser.test.ts",
   "tests/jun29DamagedMobileParser.test.ts",
+  "tests/rentalExtraction.test.ts",
 ];
 const runner = process.execPath;
 const jitiCli = join("node_modules", "jiti", "lib", "jiti-cli.mjs");

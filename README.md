@@ -2,6 +2,23 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Copy the example environment file and add your OpenAI key if you want AI rental
+sheet extraction:
+
+```bash
+copy .env.example .env.local
+```
+
+Set:
+
+```bash
+OPENAI_API_KEY=your_key_here
+```
+
+Create an API key from the OpenAI dashboard, then restart the dev server after
+editing `.env.local`. The key is only used by the server route and is never sent
+to the browser.
+
 First, run the development server:
 
 ```bash
@@ -15,6 +32,27 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## Rental Sheet Extraction
+
+The Rentals page tries AI extraction first when the browser is online and
+`OPENAI_API_KEY` is configured. The uploaded sheet photos are sent to the
+server-side route at `/api/parse-rental-sheet`, which calls OpenAI and returns
+normalized rental JSON for review.
+
+If AI extraction fails, times out, the app is offline, or no key is configured,
+the app falls back to the existing local Tesseract OCR/parser flow. The review
+screen shows whether the result came from `AI extraction` or
+`Offline OCR fallback`.
+
+To test locally:
+
+1. Add `OPENAI_API_KEY` to `.env.local`.
+2. Run `npm run dev`.
+3. Open `/rentals`, choose `Add Sheets`, select one or more sheet photos, then
+   scan and review the extracted rentals.
+4. To test fallback, remove the key or use DevTools Network Offline, then scan
+   again.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

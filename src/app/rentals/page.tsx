@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Rental, RentalInput } from "@/types/rental";
+import type {
+  RentalExtractionResult,
+  ReviewRentalInput,
+} from "@/types/rentalExtraction";
 import {
   parseRentalSheetTextWithDebug,
   validateParsedRentals,
@@ -18,11 +22,33 @@ type SelectedRentalSheetImage = {
 };
 
 type RentalSheetScanResult = {
-  rentals: RentalInput[];
+  rentals: ReviewRentalInput[];
   skippedLines: string[];
   rawText: string;
   validation: RentalSheetValidationResult;
+  methodLabel?: string;
+  warnings?: string[];
 };
+
+function stripReviewFields(rental: ReviewRentalInput): RentalInput {
+  return {
+    rentalDate: rental.rentalDate,
+    park: rental.park,
+    facility: rental.facility,
+    equipmentType: rental.equipmentType,
+    startTime: rental.startTime,
+    endTime: rental.endTime,
+    eventName: rental.eventName,
+    eventType: rental.eventType,
+    scheduleType: rental.scheduleType,
+    organization: rental.organization,
+    contactName: rental.contactName,
+    contactPhone: rental.contactPhone,
+    permitNumber: rental.permitNumber,
+    attendanceQuantity: rental.attendanceQuantity,
+    notes: rental.notes,
+  };
+}
 
 type OcrProgress = {
   page: number;
@@ -47,7 +73,7 @@ function sortRentalsByStartTime(a: Rental, b: Rental) {
   return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
 }
 
-function createBlankReviewRental(): RentalInput {
+function createBlankReviewRental(): ReviewRentalInput {
   return {
     rentalDate: "",
     park: "",
@@ -142,7 +168,8 @@ export default function RentalsPage() {
   const [ocrMessage, setOcrMessage] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
-  const [reviewRentals, setReviewRentals] = useState<RentalInput[]>([]);
+  const [reviewRentals, setReviewRentals] = useState<ReviewRentalInput[]>([]);
+  const [extractionMethodLabel, setExtractionMethodLabel] = useState("");
   const [openMenuRentalId, setOpenMenuRentalId] = useState<string | null>(null);
   const [ocrDebug, setOcrDebug] = useState<{
     rawText: string;
@@ -188,24 +215,110 @@ export default function RentalsPage() {
     setGroomingRental(null);
   }
 
-  async function handleScanRentalSheet() {
-    if (selectedImages.length === 0) {
-      setOcrMessage("Upload one or more rental sheet photos first.");
-      return;
+  function applyScanResult(result: RentalSheetScanResult) {
+    const detectedRentals = result.rentals;
+
+    console.info("[rental OCR] parsed rental objects after parsing:", {
+      count: detectedRentals.length,
+      rentals: detectedRentals,
+      validation: result.validation,
+      skippedLines: result.skippedLines,
+      warnings: result.warnings,
+      method: result.methodLabel,
+    });
+    setReviewRentals(detectedRentals);
+    setReviewValidation(result.validation);
+    setExtractionMethodLabel(result.methodLabel ?? "Offline OCR fallback");
+    setOcrDebug({
+      rawText: result.rawText,
+      skippedLines: result.skippedLines,
+      detectedCount: result.rentals.length,
+      validation: result.validation,
+    });
+    addActivity({
+      category: "rental",
+      action: "Rental sheet scanned",
+      notes: `${result.methodLabel ?? "Offline OCR fallback"}: ${
+        detectedRentals.length
+      } rental${detectedRentals.length === 1 ? "" : "s"} parsed for review`,
+    });
+    setOcrMessage(
+      `${result.methodLabel ?? "Offline OCR fallback"}: ${
+        detectedRentals.length
+      } rentals detected. Review before importing.`,
+    );
+  }
+
+  async function scanWithOpenAI() {
+    const formData = new FormData();
+
+    selectedImages.forEach((image) => {
+      formData.append("files", image.file, image.file.name);
+    });
+
+    const response = await fetch("/api/parse-rental-sheet", {
+      method: "POST",
+      body: formData,
+    });
+    const result = (await response.json()) as
+      | RentalExtractionResult
+      | { error?: string; fallbackAvailable?: boolean };
+
+    if (!response.ok) {
+      throw new Error(
+        "error" in result && result.error ? result.error : "AI extraction failed.",
+      );
     }
 
-    setIsScanning(true);
-    setOcrMessage("Preparing local OCR...");
-    setOcrProgress({
-      page: 0,
-      total: selectedImages.length,
-      status: "Starting Tesseract",
-      percent: 0,
-    });
-    setReviewRentals([]);
-    setOcrDebug(null);
-    setReviewValidation(null);
+    return result as RentalExtractionResult;
+  }
 
+  async function parseFallbackText(rawText: string) {
+    if (navigator.onLine) {
+      try {
+        const response = await fetch("/api/parse-rental-sheet", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ocrText: rawText }),
+        });
+
+        if (response.ok) {
+          return (await response.json()) as RentalExtractionResult;
+        }
+      } catch {
+        // Local parser below keeps offline fallback available.
+      }
+    }
+
+    const parsedResult = parseRentalSheetTextWithDebug(rawText);
+    const rentals = parsedResult.rentals.map((rental) => ({
+      ...rental,
+      warnings: [],
+    }));
+    const validation = validateParsedRentals(rentals, {
+      skippedLines: parsedResult.skippedLines,
+      rawText: parsedResult.rawText,
+      expectedRentalCount: /\bJun\s+29[,.\s]+\s*2026\b/i.test(
+        parsedResult.rawText,
+      )
+        ? 12
+        : null,
+    });
+
+    return {
+      rentals,
+      skippedLines: parsedResult.skippedLines,
+      rawText: parsedResult.rawText,
+      validation,
+      method: "tesseract" as const,
+      methodLabel: "Offline OCR fallback",
+      warnings: validation.issues.map((issue) => issue.message),
+    };
+  }
+
+  async function scanWithTesseractFallback() {
     let worker: Awaited<
       ReturnType<typeof import("tesseract.js")["createWorker"]>
     > | null = null;
@@ -240,7 +353,9 @@ export default function RentalsPage() {
 
       for (const [index, image] of selectedImages.entries()) {
         currentPage = index + 1;
-        setOcrMessage(`Scanning page ${currentPage} of ${selectedImages.length}...`);
+        setOcrMessage(
+          `Offline OCR fallback: scanning page ${currentPage} of ${selectedImages.length}...`,
+        );
         setOcrProgress({
           page: currentPage,
           total: selectedImages.length,
@@ -261,36 +376,53 @@ export default function RentalsPage() {
       console.info("[rental OCR] full raw OCR text before parsing:", rawText);
 
       if (!rawText) {
-        setOcrMessage("No rental sheet text was detected.");
-        return;
+        throw new Error("No rental sheet text was detected.");
       }
 
-      const result: RentalSheetScanResult = parseRentalSheetTextWithDebug(rawText);
-      const detectedRentals = result.rentals;
-      console.info("[rental OCR] parsed rental objects after parsing:", {
-        count: detectedRentals.length,
-        rentals: detectedRentals,
-        validation: result.validation,
-        skippedLines: result.skippedLines,
-      });
-      setReviewRentals(detectedRentals);
-      setReviewValidation(result.validation);
-      setOcrDebug({
-        rawText: result.rawText,
-        skippedLines: result.skippedLines,
-        detectedCount: result.rentals.length,
-        validation: result.validation,
-      });
-      addActivity({
-        category: "rental",
-        action: "Rental sheet scanned",
-        notes: `${selectedImages.length} photo${
-          selectedImages.length === 1 ? "" : "s"
-        } parsed for review`,
-      });
-      setOcrMessage(
-        `${detectedRentals.length} rentals detected. Review before importing.`,
-      );
+      return await parseFallbackText(rawText);
+    } finally {
+      await worker?.terminate();
+    }
+  }
+
+  async function handleScanRentalSheet() {
+    if (selectedImages.length === 0) {
+      setOcrMessage("Upload one or more rental sheet photos first.");
+      return;
+    }
+
+    setIsScanning(true);
+    setOcrMessage("Preparing local OCR...");
+    setOcrProgress({
+      page: 0,
+      total: selectedImages.length,
+      status: navigator.onLine ? "Starting AI extraction" : "Starting Tesseract",
+      percent: 0,
+    });
+    setReviewRentals([]);
+    setOcrDebug(null);
+    setReviewValidation(null);
+    setExtractionMethodLabel("");
+
+    try {
+      if (navigator.onLine) {
+        try {
+          setOcrMessage("AI extraction: uploading sheet photos...");
+          setOcrProgress({
+            page: 0,
+            total: selectedImages.length,
+            status: "AI extraction",
+            percent: 25,
+          });
+          applyScanResult(await scanWithOpenAI());
+          return;
+        } catch (error) {
+          console.warn("[rental OCR] AI extraction failed, using fallback:", error);
+          setOcrMessage("AI extraction failed. Using Offline OCR fallback...");
+        }
+      }
+
+      applyScanResult(await scanWithTesseractFallback());
     } catch (error) {
       const errorMessage = getOcrErrorMessage(error);
 
@@ -299,7 +431,6 @@ export default function RentalsPage() {
         `Rental sheet scan failed: ${errorMessage}. Check the photos and try again.`,
       );
     } finally {
-      await worker?.terminate();
       setIsScanning(false);
       setOcrProgress(null);
     }
@@ -318,6 +449,7 @@ export default function RentalsPage() {
     setReviewRentals([]);
     setOcrDebug(null);
     setReviewValidation(null);
+    setExtractionMethodLabel("");
 
     const files = Array.from(fileList ?? []);
 
@@ -350,6 +482,7 @@ export default function RentalsPage() {
     setReviewRentals([]);
     setOcrDebug(null);
     setReviewValidation(null);
+    setExtractionMethodLabel("");
     setOcrMessage("");
   }
 
@@ -359,6 +492,7 @@ export default function RentalsPage() {
     setReviewRentals([]);
     setOcrDebug(null);
     setReviewValidation(null);
+    setExtractionMethodLabel("");
     setOcrMessage("");
   }
 
@@ -441,7 +575,7 @@ export default function RentalsPage() {
       return;
     }
 
-    importRentals(reviewRentals);
+    importRentals(reviewRentals.map(stripReviewFields));
     selectedImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
     setSelectedImages([]);
     setReviewRentals([]);
@@ -474,7 +608,7 @@ export default function RentalsPage() {
           <span className="text-xl font-black text-slate-950">Add Sheets</span>
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               multiple
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               onChange={(event) => {
@@ -633,6 +767,11 @@ export default function RentalsPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     Edit, delete, or add rows before tasks are generated.
                   </p>
+                  {extractionMethodLabel ? (
+                    <p className="mt-2 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700">
+                      {extractionMethodLabel}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -645,10 +784,33 @@ export default function RentalsPage() {
               {reviewRentals.map((rental, index) => (
                 <article
                   key={`${rental.facility}-${index}`}
-                  className={`rounded-lg border-[6px] p-3 shadow-sm ${getRentalFieldClass(
+                  className={`rounded-lg border-[6px] p-3 shadow-sm ${
+                    rental.warnings && rental.warnings.length > 0
+                      ? "ring-4 ring-yellow-300"
+                      : ""
+                  } ${getRentalFieldClass(
                     rental,
                   )}`}
                 >
+                  {typeof rental.confidence === "number" ||
+                  (rental.warnings && rental.warnings.length > 0) ? (
+                    <div className="mb-3 rounded-lg bg-white/90 p-2 text-xs font-bold text-slate-800">
+                      {typeof rental.confidence === "number" ? (
+                        <p>
+                          Confidence: {Math.round(rental.confidence * 100)}%
+                        </p>
+                      ) : null}
+                      {rental.warnings && rental.warnings.length > 0 ? (
+                        <ul className="mt-1 space-y-1">
+                          {rental.warnings.map((warning, warningIndex) => (
+                            <li key={`${warning}-${warningIndex}`}>
+                              Warning: {warning}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="col-span-2 block">
                       <span className="text-xs font-bold text-slate-600">
