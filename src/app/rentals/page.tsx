@@ -442,10 +442,12 @@ export default function RentalsPage() {
     }
 
     importRentals(reviewRentals);
+    selectedImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    setSelectedImages([]);
     setReviewRentals([]);
     setOcrDebug(null);
     setReviewValidation(null);
-    setOcrMessage("Rentals imported. Shift tasks have been generated.");
+    setOcrMessage("");
   }
 
   return (
@@ -454,18 +456,22 @@ export default function RentalsPage() {
         <h1 className="display-title text-4xl font-black">Rentals</h1>
       </header>
 
-      <Link
-        href="/rentals/new"
-        className="flex min-h-14 w-full items-center justify-center rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]"
-      >
-        Manual Entry
-      </Link>
+      <section className="grid gap-3">
+        <Link
+          href="/rentals/new"
+          className="flex min-h-28 items-center gap-4 rounded-2xl border-4 border-white bg-[#c8d7ee] p-4 text-left shadow-sm transition active:scale-[0.99]"
+        >
+          <span className="text-5xl" aria-hidden="true">
+            🛠️
+          </span>
+          <span className="text-xl font-black text-slate-950">Manual Entry</span>
+        </Link>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-bold">Import Rental Sheet</h2>
-        <div className="mt-4 space-y-3">
-          <label className="relative flex min-h-14 w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99]">
-            Add Sheets
+        <label className="relative flex min-h-28 cursor-pointer items-center gap-4 overflow-hidden rounded-2xl border-4 border-white bg-[#f5b971] p-4 text-left shadow-sm transition active:scale-[0.99]">
+          <span className="text-5xl" aria-hidden="true">
+            🖼️
+          </span>
+          <span className="text-xl font-black text-slate-950">Add Sheets</span>
             <input
               type="file"
               accept="image/*"
@@ -476,8 +482,12 @@ export default function RentalsPage() {
                 event.currentTarget.value = "";
               }}
             />
-          </label>
+        </label>
+      </section>
 
+      {selectedImages.length > 0 || ocrProgress || ocrMessage || ocrDebug ? (
+      <section className="rounded-2xl border-4 border-white bg-white/75 p-4 shadow-sm">
+        <div className="space-y-3">
           {selectedImages.length > 0 ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-100 p-3">
@@ -521,14 +531,16 @@ export default function RentalsPage() {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            onClick={handleScanRentalSheet}
-            disabled={isScanning || selectedImages.length === 0}
-            className="min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm transition active:scale-[0.99] disabled:bg-slate-100 disabled:text-slate-400"
-          >
-            {isScanning ? "Scanning..." : "Scan Selected Sheets"}
-          </button>
+          {selectedImages.length > 0 ? (
+            <button
+              type="button"
+              onClick={handleScanRentalSheet}
+              disabled={isScanning}
+              className="min-h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm transition active:scale-[0.99] disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              {isScanning ? "Scanning..." : "Scan Selected Sheets"}
+            </button>
+          ) : null}
 
           {ocrProgress ? (
             <div className="rounded-lg bg-slate-100 p-3 text-sm font-semibold text-slate-700">
@@ -768,6 +780,7 @@ export default function RentalsPage() {
           ) : null}
         </div>
       </section>
+      ) : null}
 
       <div>
         {sortedRentals.length === 0 ? (
@@ -826,7 +839,7 @@ export default function RentalsPage() {
                   <h2 className="text-base font-black leading-tight text-slate-950">
                     {rental.facility}
                   </h2>
-                  <p className="mt-2 inline-flex min-w-44 max-w-full justify-center whitespace-nowrap rounded-full bg-white/90 px-4 py-1.5 text-xs font-black text-slate-800 shadow-sm">
+                  <p className="mt-2 flex w-full max-w-full justify-center whitespace-nowrap rounded-full bg-white/90 px-2 py-1.5 text-[11px] font-black text-slate-800 shadow-sm">
                     {rental.startTime} - {rental.endTime}
                   </p>
                 </div>

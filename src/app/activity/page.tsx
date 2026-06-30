@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ActivityLogEntry } from "@/types/activity";
 import { usePatrol } from "../context/PatrolContext";
 
@@ -44,6 +44,54 @@ type LightReportSnapshot = {
   dayLabels: string[];
   weeklyRows: WeeklyLightRow[];
 };
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className="h-14 w-14">
+      <rect
+        x="9"
+        y="18"
+        width="46"
+        height="34"
+        rx="8"
+        fill="#eef6ff"
+        stroke="#020617"
+        strokeWidth="4"
+      />
+      <path
+        d="M23 18l4-7h10l4 7"
+        fill="#c8d7ee"
+        stroke="#020617"
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <circle cx="32" cy="35" r="10" fill="#93c5fd" stroke="#020617" strokeWidth="4" />
+      <circle cx="48" cy="26" r="3" fill="#020617" />
+    </svg>
+  );
+}
+
+async function compressReportPhoto(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const maxDimension = 1200;
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    bitmap.close();
+    throw new Error("Could not prepare photo.");
+  }
+
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
 
 function printReport() {
   window.setTimeout(() => window.print(), 50);
@@ -188,9 +236,11 @@ export default function ActivityPage() {
     activeShiftDate,
     activityLog,
     addActivity,
+    addReportPhoto,
     addReportNote,
     clearLocalData,
     markShiftReportGenerated,
+    reportPhotos,
     reportNotes,
     shiftHistory,
     workerName,
@@ -201,6 +251,7 @@ export default function ActivityPage() {
   const [reportType, setReportType] = useState<ReportType | null>(null);
   const [lightReportSnapshot, setLightReportSnapshot] =
     useState<LightReportSnapshot | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   function generateLightReport() {
     const reportStart = new Date();
@@ -247,6 +298,26 @@ export default function ActivityPage() {
     setIsNoteOpen(false);
   }
 
+  async function handlePhotoSelected(fileList: FileList | null) {
+    const file = fileList?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const dataUrl = await compressReportPhoto(file);
+
+      addReportPhoto(dataUrl);
+    } catch {
+      window.alert("That photo could not be saved. Try taking it again.");
+    } finally {
+      if (photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
+    }
+  }
+
   return (
     <main className="space-y-4 p-4">
       <header className="pt-2 text-center no-print">
@@ -264,6 +335,22 @@ export default function ActivityPage() {
           </span>
           <span className="text-xl font-black text-slate-950">Leave Note</span>
         </button>
+        <button
+          type="button"
+          onClick={() => photoInputRef.current?.click()}
+          className="flex min-h-32 items-center gap-4 rounded-2xl border-4 border-white bg-[#a7d8f0] p-4 text-left shadow-sm transition active:scale-[0.99]"
+        >
+          <CameraIcon />
+          <span className="text-xl font-black text-slate-950">Take Photo</span>
+        </button>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => handlePhotoSelected(event.target.files)}
+        />
         <button
           type="button"
           onClick={generateShiftReport}
@@ -377,6 +464,27 @@ export default function ActivityPage() {
                   )}
                 </div>
               </section>
+
+              {reportPhotos.length > 0 ? (
+                <section>
+                  <h2 className="text-xl font-bold">Photos</h2>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    {reportPhotos.map((photo) => (
+                      <figure key={photo.id} className="break-inside-avoid">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.dataUrl}
+                          alt=""
+                          className="max-h-64 w-full object-contain"
+                        />
+                        <figcaption className="mt-1 text-xs">
+                          {timeFormatter.format(new Date(photo.timestamp))}
+                        </figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </div>
           ) : lightReportSnapshot ? (
             <div className="space-y-5">

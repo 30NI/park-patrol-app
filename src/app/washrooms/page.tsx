@@ -47,7 +47,7 @@ export default function WashroomsPage() {
   }
 
   return (
-    <main className="space-y-4 p-4">
+    <main className="space-y-4 p-4 pb-8">
       <header className="pt-2 text-center">
         <h1 className="display-title text-4xl font-black">Washrooms</h1>
       </header>
@@ -69,7 +69,7 @@ export default function WashroomsPage() {
           return (
             <article
               key={park}
-              className={`relative aspect-square min-h-44 rounded-2xl border-[6px] p-3 shadow-sm ${
+              className={`relative aspect-square min-h-36 rounded-2xl border-[6px] p-3 shadow-sm ${
                 isLastOddTile ? "col-span-2 mx-auto w-[calc(50%-0.375rem)]" : ""
               } ${
                 status
@@ -91,12 +91,12 @@ export default function WashroomsPage() {
               <button
                 type="button"
                 onClick={() => handleCheck(park)}
-                className="flex h-full w-full flex-col items-start justify-between rounded-xl text-left transition active:scale-[0.98]"
+                className="absolute inset-3 flex flex-col items-start justify-between rounded-xl text-left transition active:scale-[0.98]"
               >
                 <span className="pr-10 text-lg font-black leading-tight">
                   {label}
                 </span>
-                <span className="rounded-full border-2 border-[#0b1f4d] bg-white px-3 py-1.5 text-sm font-black text-[#0b1f4d] shadow-sm">
+                <span className="max-w-full rounded-full border-2 border-[#0b1f4d] bg-white px-3 py-1.5 text-sm font-black text-[#0b1f4d] shadow-sm">
                   {checkedAt
                     ? timeFormatter.format(new Date(checkedAt))
                     : "Check Washroom"}

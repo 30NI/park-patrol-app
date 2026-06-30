@@ -30,6 +30,12 @@ type GarbageStatuses = Record<
 
 type CheckResult = "checked" | "too-soon";
 
+export type ShiftReportPhoto = {
+  id: string;
+  timestamp: string;
+  dataUrl: string;
+};
+
 export type StoredShiftState = {
   date: string;
   rentals: Rental[];
@@ -43,6 +49,7 @@ export type StoredShiftState = {
   workerName: string;
   workerSignature: string;
   reportNotes: string[];
+  reportPhotos: ShiftReportPhoto[];
   routeTaskOrder: string[];
   routeTaskTimes: Record<string, string>;
 };
@@ -71,6 +78,7 @@ type PatrolContextValue = {
   workerName: string;
   workerSignature: string;
   reportNotes: string[];
+  reportPhotos: ShiftReportPhoto[];
   washroomStatuses: WashroomStatuses;
   washroomCheckedAt: WashroomCheckTimes;
   garbageStatuses: GarbageStatuses;
@@ -111,6 +119,7 @@ type PatrolContextValue = {
   startShift: (workerName: string, workerSignature: string) => void;
   endShift: () => void;
   addReportNote: (note: string) => void;
+  addReportPhoto: (dataUrl: string) => void;
   setRouteTaskOrder: (taskIds: string[]) => void;
   setRouteTaskTime: (taskId: string, time: string) => void;
   resetRouteEdits: () => void;
@@ -253,6 +262,7 @@ function createEmptyShiftState(date = getShiftDate()): StoredShiftState {
     workerName: "",
     workerSignature: "",
     reportNotes: [],
+    reportPhotos: [],
     routeTaskOrder: [],
     routeTaskTimes: {},
   };
@@ -275,6 +285,9 @@ function normalizeShiftState(
     workerName: shift?.workerName ?? "",
     workerSignature: shift?.workerSignature ?? "",
     reportNotes: Array.isArray(shift?.reportNotes) ? shift.reportNotes : [],
+    reportPhotos: Array.isArray(shift?.reportPhotos)
+      ? shift.reportPhotos
+      : [],
     routeTaskOrder: Array.isArray(shift?.routeTaskOrder)
       ? shift.routeTaskOrder
       : [],
@@ -373,6 +386,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
   const [workerName, setWorkerName] = useState("");
   const [workerSignature, setWorkerSignature] = useState("");
   const [reportNotes, setReportNotes] = useState<string[]>([]);
+  const [reportPhotos, setReportPhotos] = useState<ShiftReportPhoto[]>([]);
   const [washroomCheckedAt, setWashroomCheckedAt] =
     useState<WashroomCheckTimes>(initialWashroomCheckedAt);
   const [garbageCheckedAt, setGarbageCheckedAt] =
@@ -419,6 +433,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       setWorkerName(activeShift.workerName);
       setWorkerSignature(activeShift.workerSignature);
       setReportNotes(activeShift.reportNotes);
+      setReportPhotos(activeShift.reportPhotos);
       setWashroomCheckedAt(activeShift.washroomCheckedAt);
       setGarbageCheckedAt(activeShift.garbageCheckedAt);
       setRentals(activeShift.rentals);
@@ -451,6 +466,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       workerName,
       workerSignature,
       reportNotes,
+      reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
     };
@@ -472,6 +488,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     hasLoadedSavedState,
     lightTaskStates,
     reportNotes,
+    reportPhotos,
     rentals,
     routeTaskOrder,
     routeTaskTimes,
@@ -575,6 +592,28 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  const addReportPhoto = useCallback((dataUrl: string) => {
+    const timestamp = new Date().toISOString();
+
+    setReportPhotos((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        timestamp,
+        dataUrl,
+      },
+    ]);
+    setActivityLog((current) => [
+      {
+        id: crypto.randomUUID(),
+        timestamp,
+        category: "report",
+        action: "Shift photo added",
+      },
+      ...current,
+    ]);
+  }, []);
+
   const endShift = useCallback(() => {
     const endedAt = new Date().toISOString();
     const endShiftEntry: ActivityLogEntry = {
@@ -597,6 +636,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       workerName,
       workerSignature,
       reportNotes,
+      reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
     };
@@ -613,6 +653,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     garbageCheckedAt,
     lightTaskStates,
     reportNotes,
+    reportPhotos,
     rentals,
     routeTaskOrder,
     routeTaskTimes,
@@ -638,6 +679,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       workerName,
       workerSignature,
       reportNotes,
+      reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
     };
@@ -655,6 +697,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     setWorkerName(nextShift.workerName);
     setWorkerSignature(nextShift.workerSignature);
     setReportNotes(nextShift.reportNotes);
+    setReportPhotos(nextShift.reportPhotos);
     setWashroomCheckedAt(nextShift.washroomCheckedAt);
     setGarbageCheckedAt(nextShift.garbageCheckedAt);
     setRentals(nextShift.rentals);
@@ -668,6 +711,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     garbageCheckedAt,
     lightTaskStates,
     reportNotes,
+    reportPhotos,
     rentals,
     routeTaskOrder,
     routeTaskTimes,
@@ -693,6 +737,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     setWorkerName(nextShift.workerName);
     setWorkerSignature(nextShift.workerSignature);
     setReportNotes(nextShift.reportNotes);
+    setReportPhotos(nextShift.reportPhotos);
     setWashroomCheckedAt(nextShift.washroomCheckedAt);
     setGarbageCheckedAt(nextShift.garbageCheckedAt);
     setRentals(nextShift.rentals);
@@ -1133,6 +1178,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
         workerName,
         workerSignature,
         reportNotes,
+        reportPhotos,
         routeTaskOrder,
         routeTaskTimes,
       },
@@ -1143,6 +1189,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       garbageCheckedAt,
       lightTaskStates,
       reportNotes,
+      reportPhotos,
       rentals,
       routeTaskOrder,
       routeTaskTimes,
@@ -1166,6 +1213,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       workerName,
       workerSignature,
       reportNotes,
+      reportPhotos,
       washroomStatuses,
       washroomCheckedAt,
       garbageStatuses,
@@ -1197,6 +1245,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       startShift,
       endShift,
       addReportNote,
+      addReportPhoto,
       setRouteTaskOrder,
       setRouteTaskTime,
       resetRouteEdits,
@@ -1209,6 +1258,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       addActivity,
       addRental,
       addReportNote,
+      addReportPhoto,
       clearLocalData,
       clearRentals,
       currentShiftHistory,
@@ -1224,6 +1274,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       lightTaskStates,
       markShiftReportGenerated,
       reportNotes,
+      reportPhotos,
       rentals,
       resetRouteEdits,
       routeTaskOrder,
