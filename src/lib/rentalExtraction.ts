@@ -14,6 +14,7 @@ type OpenAIRentalRow = {
   endTime?: string;
   eventName?: string;
   eventType?: string;
+  scheduleType?: string;
   permitNumber?: string;
   attendQty?: string;
   notes?: string;
@@ -111,6 +112,7 @@ const rentalExtractionSchema = {
           endTime: { type: "string" },
           eventName: { type: "string" },
           eventType: { type: "string" },
+          scheduleType: { type: "string" },
           permitNumber: { type: "string" },
           attendQty: { type: "string" },
           notes: { type: "string" },
@@ -124,6 +126,7 @@ const rentalExtractionSchema = {
           "endTime",
           "eventName",
           "eventType",
+          "scheduleType",
           "permitNumber",
           "attendQty",
           "notes",
@@ -343,6 +346,38 @@ function timeToMinutes(value: string) {
   return hour * 60 + Number(match[2]);
 }
 
+function normalizeScheduleType(
+  value: string,
+  equipmentType: string,
+  eventName: string,
+) {
+  const normalizedValue = normalizeSearchText(`${value} ${eventName}`);
+
+  if (
+    normalizedValue.includes("games with lines") ||
+    normalizedValue.includes("game with lines")
+  ) {
+    return "Ball Diamond - Games with Lines";
+  }
+
+  if (
+    normalizedValue.includes("no maintenance") ||
+    normalizedValue.includes("no mantenance") ||
+    normalizedValue.includes("no manienance")
+  ) {
+    return "Ball Diamond - No Maintenance";
+  }
+
+  if (
+    normalizedValue.includes("soccer field rental") ||
+    /soccer/i.test(equipmentType)
+  ) {
+    return "Soccer Field Rental - Minor";
+  }
+
+  return value.trim();
+}
+
 export function validateRental(rental: ReviewRentalInput) {
   const warnings = [...(rental.warnings ?? [])];
   const startMinutes = timeToMinutes(rental.startTime);
@@ -393,6 +428,8 @@ export function normalizeRental(
     warnings.push(`Facility was fuzzy matched from "${row.facility}".`);
   }
 
+  const eventName = row.eventName?.trim() ?? "";
+
   const normalizedRental: ReviewRentalInput = {
     rentalDate: normalizeDate(reservationDate),
     park: normalizeParkName(row.park ?? "", facilityPark),
@@ -400,14 +437,13 @@ export function normalizeRental(
     equipmentType,
     startTime: normalizeTime(row.startTime ?? ""),
     endTime: normalizeTime(row.endTime ?? ""),
-    eventName: row.eventName?.trim() ?? "",
+    eventName,
     eventType: row.eventType?.trim() || "External Reservation",
-    scheduleType:
-      "scheduleType" in row
-        ? row.scheduleType?.trim() ?? ""
-        : /soccer/i.test(equipmentType)
-          ? "Soccer Field Rental - Minor"
-          : "",
+    scheduleType: normalizeScheduleType(
+      "scheduleType" in row ? row.scheduleType ?? "" : "",
+      equipmentType,
+      eventName,
+    ),
     organization:
       "organization" in row
         ? row.organization?.trim() ?? ""
@@ -565,6 +601,8 @@ export async function extractRentalSheetWithOpenAI(files: File[]) {
             text:
               "Extract every rental row from these Reservation Master Report pages. " +
               "Return only structured JSON matching the schema. Keep duplicate facilities only when time or event differs. " +
+              "Put the rental program name in eventName, the reservation category in eventType, and the line under Event Type/Schedule Type in scheduleType. " +
+              "Important scheduleType examples include Ball Diamond - Games with Lines, Ball Diamond - No Maintenance, and Soccer Field Rental - Minor. " +
               "Use 12-hour times like 6:00 PM. Use YYYY-MM-DD dates. If unsure, include the row with low confidence and a warning.",
           },
           ...fileInputs,

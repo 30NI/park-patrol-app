@@ -15,6 +15,7 @@ const messyRows = normalizeExtractedRentals(
       endTime: "10:30 PM",
       eventName: "PMBA June - Games 2026",
       eventType: "External Reservation",
+      scheduleType: "Ball Diamond - Games with Lines",
       permitNumber: "R11825",
       attendQty: "30",
       notes: "",
@@ -28,6 +29,7 @@ const messyRows = normalizeExtractedRentals(
       endTime: "9:00 PM",
       eventName: "Pelham Soccer June 2026",
       eventType: "External Reservation",
+      scheduleType: "Soccer FieId Rental - Minor",
       permitNumber: "R11624",
       attendQty: "20",
       notes: "",
@@ -41,6 +43,7 @@ const messyRows = normalizeExtractedRentals(
       endTime: "7:30 PM",
       eventName: "PMBA June - Practices 2026",
       eventType: "External Reservation",
+      scheduleType: "Ball Diamond - No Manienance",
       permitNumber: "R11825",
       attendQty: "1",
       notes: "",
@@ -54,6 +57,7 @@ const messyRows = normalizeExtractedRentals(
       endTime: "10:30 PM",
       eventName: "PMBA June - Games 2026",
       eventType: "External Reservation",
+      scheduleType: "Ball Diamond - Games with Lines",
       permitNumber: "R11825",
       attendQty: "30",
       notes: "duplicate",
@@ -67,6 +71,7 @@ const messyRows = normalizeExtractedRentals(
       endTime: "9:30 PM",
       eventName: "PMBA June - Practices 2026",
       eventType: "External Reservation",
+      scheduleType: "Ball Diamond - No Maintenance",
       permitNumber: "R11825",
       attendQty: "1",
       notes: "different event/time",
@@ -82,13 +87,16 @@ assert.equal(messyRows[0].park, "Centennial Park");
 assert.equal(messyRows[0].rentalDate, "2026-06-29");
 assert.equal(messyRows[0].startTime, "6:00 PM");
 assert.equal(messyRows[0].endTime, "10:30 PM");
+assert.equal(messyRows[0].scheduleType, "Ball Diamond - Games with Lines");
 
 assert.equal(messyRows[1].facility, "HBP - Soccer Field - 7V7 Sizes");
 assert.equal(messyRows[1].park, "Harold Black Park");
+assert.equal(messyRows[1].scheduleType, "Soccer Field Rental - Minor");
 assert.ok(messyRows[1].warnings?.includes("Low AI confidence."));
 
 assert.equal(messyRows[2].facility, "NPP - Diamond #1 (Pitching Machine)");
 assert.equal(messyRows[2].startTime, "6:00 PM");
+assert.equal(messyRows[2].scheduleType, "Ball Diamond - No Maintenance");
 
 assert.equal(
   fuzzyMatchFacility("Soccer FieId at HBP")?.facility.facility,
@@ -114,6 +122,7 @@ const invalidRows = normalizeExtractedRentals(
       endTime: "10:30 PM",
       eventName: "",
       eventType: "",
+      scheduleType: "",
       permitNumber: "",
       attendQty: "",
       notes: "",
