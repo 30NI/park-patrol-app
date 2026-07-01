@@ -203,11 +203,11 @@ function drawTable(
   let cursorY = y;
 
   const drawHeaderRow = () => {
-    doc.setFillColor(239, 244, 248);
-    doc.setDrawColor(...ruleColor);
     let x = marginX;
 
     headers.forEach((header, index) => {
+      doc.setFillColor(239, 244, 248);
+      doc.setDrawColor(...ruleColor);
       doc.rect(x, cursorY, widths[index], rowHeight, "FD");
       setText(doc, 8, "bold");
       doc.text(header, x + 5, cursorY + 15);
