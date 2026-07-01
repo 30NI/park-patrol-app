@@ -247,21 +247,29 @@ function drawTable(
 function drawNotes(doc: jsPDF, notes: string[], y: number, title: string, subtitle: string) {
   let cursorY = sectionTitle(doc, "Notes", y);
   const noteText = notes.length > 0 ? notes : ["No notes recorded."];
+  const wrappedNotes = noteText.map((note) =>
+    doc.splitTextToSize(note, pageWidth - marginX * 2 - 46),
+  );
+  const boxHeight = Math.max(
+    46,
+    wrappedNotes.reduce((total, lines) => total + lines.length * 12 + 8, 18),
+  );
 
-  noteText.forEach((note) => {
-    const lines = doc.splitTextToSize(note, pageWidth - marginX * 2 - 24);
-    const height = Math.max(42, lines.length * 12 + 22);
+  cursorY = ensureSpace(doc, cursorY, boxHeight, title, subtitle);
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(...ruleColor);
+  doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, boxHeight, 4, 4, "FD");
 
-    cursorY = ensureSpace(doc, cursorY, height, title, subtitle);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...ruleColor);
-    doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, height, 4, 4, "FD");
+  let noteY = cursorY + 20;
+  wrappedNotes.forEach((lines) => {
+    setText(doc, 10, "bold");
+    doc.text("•", marginX + 14, noteY);
     setText(doc, 9);
-    doc.text(lines, marginX + 12, cursorY + 18);
-    cursorY += height + 10;
+    doc.text(lines, marginX + 28, noteY);
+    noteY += lines.length * 12 + 8;
   });
 
-  return cursorY + 8;
+  return cursorY + boxHeight + 18;
 }
 
 function addPhotos(doc: jsPDF, photos: ReportPhoto[], y: number, title: string, subtitle: string) {
