@@ -21,8 +21,8 @@ type ParkCheckCardProps = {
 
 function getParkTitleClassName(label: string) {
   return label.length > 18
-    ? "text-[1.7rem] font-bold leading-[1.08]"
-    : "text-[2rem] font-bold leading-[1.08]";
+    ? "text-[1.55rem] font-bold leading-[1.08]"
+    : "text-[1.85rem] font-bold leading-[1.08]";
 }
 
 export function ParkCheckCard({
@@ -50,7 +50,7 @@ export function ParkCheckCard({
       <button
         type="button"
         onClick={onToggleMenu}
-        className="absolute right-3 top-3 z-40 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-base font-bold text-slate-700 shadow-[0_1px_5px_rgba(15,23,42,0.18)]"
+        className="absolute right-3 top-3 z-40 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.16)]"
         aria-label={`Open options for ${park}`}
       >
         ...
@@ -72,9 +72,9 @@ export function ParkCheckCard({
       <button
         type="button"
         onClick={onCheck}
-        className="absolute inset-4 flex flex-col items-start justify-between pb-1 text-left transition active:scale-[0.98]"
+        className="absolute inset-x-4 bottom-5 top-6 flex flex-col items-start justify-between text-left transition active:scale-[0.98]"
       >
-        <span className={`max-w-full pr-9 ${getParkTitleClassName(label)}`}>
+        <span className={`max-w-full pr-12 ${getParkTitleClassName(label)}`}>
           {label}
         </span>
         <span
