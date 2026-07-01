@@ -47,6 +47,7 @@ const pelhamPurple: RgbColor = [91, 30, 82];
 const pelhamRed: RgbColor = [172, 42, 55];
 const textColor: RgbColor = [20, 24, 32];
 const ruleColor: RgbColor = [184, 196, 210];
+let cachedPelhamLogoDataUrl: string | null | undefined;
 
 function createDocument() {
   return new jsPDF({
@@ -60,6 +61,31 @@ function setText(doc: jsPDF, size: number, style: "normal" | "bold" = "normal") 
   doc.setFont("helvetica", style);
   doc.setFontSize(size);
   doc.setTextColor(...textColor);
+}
+
+async function loadPelhamLogoDataUrl() {
+  if (cachedPelhamLogoDataUrl !== undefined) {
+    return cachedPelhamLogoDataUrl;
+  }
+
+  try {
+    const response = await fetch("/pelham-logo.png");
+    if (!response.ok) {
+      throw new Error("Logo image unavailable");
+    }
+
+    const blob = await response.blob();
+    cachedPelhamLogoDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    cachedPelhamLogoDataUrl = null;
+  }
+
+  return cachedPelhamLogoDataUrl;
 }
 
 function drawPelhamMark(doc: jsPDF, x: number, y: number) {
@@ -90,11 +116,15 @@ function drawAccentDivider(doc: jsPDF, y: number) {
 }
 
 function drawHeader(doc: jsPDF, title: string, subtitle: string) {
-  drawPelhamMark(doc, marginX, 32);
-  setText(doc, 25, "bold");
-  doc.text("Pelham", marginX + 38, 53);
-  setText(doc, 7, "bold");
-  doc.text("NIAGARA", marginX + 105, 65);
+  if (cachedPelhamLogoDataUrl) {
+    doc.addImage(cachedPelhamLogoDataUrl, "PNG", marginX, 24, 168, 50);
+  } else {
+    drawPelhamMark(doc, marginX, 32);
+    setText(doc, 25, "bold");
+    doc.text("Pelham", marginX + 38, 53);
+    setText(doc, 7, "bold");
+    doc.text("NIAGARA", marginX + 105, 65);
+  }
 
   setText(doc, 14, "bold");
   doc.text(title, pageWidth - marginX, 45, { align: "right" });
@@ -265,7 +295,8 @@ function savePdf(doc: jsPDF, filename: string) {
   doc.save(filename);
 }
 
-export function generateShiftReportPdf(input: ShiftReportPdfInput) {
+export async function generateShiftReportPdf(input: ShiftReportPdfInput) {
+  await loadPelhamLogoDataUrl();
   const title = "Park Patrol Shift Report";
   const subtitle = "Public Works and Parks Department";
   const doc = createDocument();
@@ -342,7 +373,8 @@ export function generateShiftReportPdf(input: ShiftReportPdfInput) {
   savePdf(doc, `park-patrol-shift-report-${new Date().toLocaleDateString("en-CA")}.pdf`);
 }
 
-export function generateWeeklyLightReportPdf(input: WeeklyLightReportPdfInput) {
+export async function generateWeeklyLightReportPdf(input: WeeklyLightReportPdfInput) {
+  await loadPelhamLogoDataUrl();
   const title = "Park Patrol Weekly Light Report";
   const subtitle = "Public Works and Parks Department";
   const doc = createDocument();
