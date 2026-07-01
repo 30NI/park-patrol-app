@@ -21,8 +21,8 @@ type ParkCheckCardProps = {
 
 function getParkTitleClassName(label: string) {
   return label.length > 18
-    ? "text-[1.55rem] font-bold leading-[1.08]"
-    : "text-[1.85rem] font-bold leading-[1.08]";
+    ? "text-[1.45rem] font-bold leading-[1.08]"
+    : "text-[1.7rem] font-bold leading-[1.08]";
 }
 
 export function ParkCheckCard({
@@ -50,14 +50,14 @@ export function ParkCheckCard({
       <button
         type="button"
         onClick={onToggleMenu}
-        className="absolute right-3 top-3 z-40 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.16)]"
+        className="absolute right-2 top-2 z-40 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.16)]"
         aria-label={`Open options for ${park}`}
       >
         ...
       </button>
 
       {isMenuOpen ? (
-        <div className="absolute right-3 top-[3.25rem] z-30 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+        <div className="absolute right-2 top-[3rem] z-30 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
           <button
             type="button"
             onClick={onUndo}
@@ -72,9 +72,9 @@ export function ParkCheckCard({
       <button
         type="button"
         onClick={onCheck}
-        className="absolute inset-x-4 bottom-5 top-6 flex flex-col items-start justify-between text-left transition active:scale-[0.98]"
+        className="absolute inset-x-4 bottom-5 top-7 flex flex-col items-start justify-between text-left transition active:scale-[0.98]"
       >
-        <span className={`max-w-full pr-12 ${getParkTitleClassName(label)}`}>
+        <span className={`max-w-[calc(100%-3.25rem)] ${getParkTitleClassName(label)}`}>
           {label}
         </span>
         <span
