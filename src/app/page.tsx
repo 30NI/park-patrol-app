@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { parks, type ParkName } from "@/constants/parks";
 import { getLightTasks } from "@/lib/lights";
 import { buildShiftTimeline } from "@/lib/shiftPlanner";
-import { timeToMinutes } from "@/lib/time";
+import { minutesToTime, timeToMinutes } from "@/lib/time";
 import type { CustomRouteTask } from "./context/PatrolContext";
 import type { ShiftTimelineTask } from "@/types/shift";
 import { usePatrol } from "./context/PatrolContext";
@@ -22,6 +22,7 @@ const dashboardWashroomParks: ParkName[] = [
   "Harold Black Park",
   "Marlene Streit Stewart Park",
 ];
+const routeSlotMinutes = 5;
 
 function WashroomIcon() {
   return (
@@ -249,6 +250,40 @@ function buildCustomTimelineTasks(customRouteTasks: CustomRouteTask[]) {
   }));
 }
 
+function resolveMovedRouteTimes(
+  orderedTasks: ShiftTimelineTask[],
+  firstChangedIndex: number,
+) {
+  const nextTimes: Record<string, string> = {};
+  const usedTimes = new Set<string>();
+
+  orderedTasks.forEach((task, index) => {
+    let taskMinutes = timeToMinutes(task.time);
+
+    if (index >= firstChangedIndex && index > 0) {
+      const previousTask = orderedTasks[index - 1];
+      const previousTime = nextTimes[previousTask.id] ?? previousTask.time;
+      const earliestMinutes = timeToMinutes(previousTime) + routeSlotMinutes;
+
+      if (taskMinutes < earliestMinutes) {
+        taskMinutes = earliestMinutes;
+      }
+    }
+
+    let nextTime = minutesToTime(taskMinutes);
+
+    while (usedTimes.has(nextTime)) {
+      taskMinutes += routeSlotMinutes;
+      nextTime = minutesToTime(taskMinutes);
+    }
+
+    usedTimes.add(nextTime);
+    nextTimes[task.id] = nextTime;
+  });
+
+  return nextTimes;
+}
+
 export default function Home() {
   const {
     addCustomRouteTask,
@@ -447,19 +482,27 @@ export default function Home() {
   }
 
   function moveRouteTask(taskId: string, direction: -1 | 1) {
-    const currentOrder = nextTasks.map((task) => task.id);
-    const currentIndex = currentOrder.indexOf(taskId);
+    const currentTasks = nextTasks;
+    const currentOrder = currentTasks.map((task) => task.id);
+    const currentIndex = currentTasks.findIndex((task) => task.id === taskId);
     const nextIndex = currentIndex + direction;
 
     if (currentIndex === -1 || nextIndex < 0 || nextIndex >= currentOrder.length) {
       return;
     }
 
-    const nextOrder = [...currentOrder];
-    const [movedTask] = nextOrder.splice(currentIndex, 1);
+    const nextOrderedTasks = [...currentTasks];
+    const [movedTask] = nextOrderedTasks.splice(currentIndex, 1);
 
-    nextOrder.splice(nextIndex, 0, movedTask);
+    nextOrderedTasks.splice(nextIndex, 0, movedTask);
+    const nextOrder = nextOrderedTasks.map((task) => task.id);
+    const firstChangedIndex = Math.min(currentIndex, nextIndex);
+    const nextTimes = resolveMovedRouteTimes(nextOrderedTasks, firstChangedIndex);
+
     setRouteTaskOrder(nextOrder);
+    nextOrderedTasks.slice(firstChangedIndex).forEach((task) => {
+      setRouteTaskTime(task.id, nextTimes[task.id]);
+    });
   }
 
   function editRouteTaskTime(task: ShiftTimelineTask) {
