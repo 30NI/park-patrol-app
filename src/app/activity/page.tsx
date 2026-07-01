@@ -98,6 +98,12 @@ const shortDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "numeric",
 });
 
+const weeklyHeaderDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
+
 function getWeekStart(date: Date) {
   const weekStart = new Date(date);
   const dayOfWeek = weekStart.getDay();
@@ -267,7 +273,9 @@ export default function ActivityPage() {
 
     generateWeeklyLightReportPdf({
       rangeLabel: `${shortDateFormatter.format(start)} - ${shortDateFormatter.format(end)}`,
-      dayLabels: days.map((day) => shortDateFormatter.format(day)),
+      dayLabels: days.map((day) =>
+        weeklyHeaderDateFormatter.format(day).replace(", ", "\n"),
+      ),
       weeklyRows: buildWeeklyLightRows(lightEntries, days),
     });
     addActivity({

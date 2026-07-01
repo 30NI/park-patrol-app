@@ -209,8 +209,9 @@ function drawTable(
       doc.setFillColor(239, 244, 248);
       doc.setDrawColor(...ruleColor);
       doc.rect(x, cursorY, widths[index], rowHeight, "FD");
+      const headerLines = doc.splitTextToSize(header, widths[index] - 10);
       setText(doc, 8, "bold");
-      doc.text(header, x + 5, cursorY + 15);
+      doc.text(headerLines.slice(0, 2), x + 5, cursorY + 10);
       x += widths[index];
     });
     cursorY += rowHeight;
