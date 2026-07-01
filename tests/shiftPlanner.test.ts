@@ -44,7 +44,7 @@ const rentalTimes = timeline
   .filter((task) => task.category === "rental")
   .map((task) => task.time);
 
-assert.deepEqual(rentalTimes, ["6:00 PM", "6:00 PM", "6:00 PM", "6:15 PM"]);
+assert.deepEqual(rentalTimes, ["6:00 PM", "6:05 PM", "6:10 PM", "6:25 PM"]);
 
 const groupedTimeline = buildShiftTimeline({
   rentals: [

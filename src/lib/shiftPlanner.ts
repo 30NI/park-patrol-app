@@ -32,6 +32,27 @@ type ParkVisitBatch = {
   originalIndex: number;
 };
 
+const SAME_PARK_RENTAL_BUFFER_MINUTES = 5;
+
+function getFieldWorkflowMinutes(
+  batch: ParkVisitBatch,
+  scheduledMinutes: number,
+  fieldIndex: number,
+) {
+  const spacedMinutes =
+    scheduledMinutes + fieldIndex * SAME_PARK_RENTAL_BUFFER_MINUTES;
+
+  if (spacedMinutes <= batch.latestMinutes) {
+    return spacedMinutes;
+  }
+
+  return Math.max(
+    batch.earliestMinutes,
+    batch.latestMinutes -
+      (batch.fields.length - 1 - fieldIndex) * SAME_PARK_RENTAL_BUFFER_MINUTES,
+  );
+}
+
 function buildRentalWorkflowTasks(rentals: Rental[]) {
   let previousPark: string | null = null;
   let previousWorkflowMinutes: number | null = null;
@@ -122,6 +143,9 @@ function buildRentalWorkflowTasks(rentals: Rental[]) {
 
   while (unscheduledBatches.length > 0) {
     const candidates = unscheduledBatches.map((batch) => {
+      const latestStartMinutes =
+        batch.latestMinutes -
+        (batch.fields.length - 1) * SAME_PARK_RENTAL_BUFFER_MINUTES;
       const travelMinutes =
         previousWorkflowMinutes === null
           ? 0
@@ -136,7 +160,8 @@ function buildRentalWorkflowTasks(rentals: Rental[]) {
       return {
         batch,
         earliestReachableMinutes,
-        canFit: earliestReachableMinutes <= batch.latestMinutes,
+        latestStartMinutes,
+        canFit: earliestReachableMinutes <= latestStartMinutes,
         samePark: batch.park === previousPark,
       };
     });
@@ -180,19 +205,32 @@ function buildRentalWorkflowTasks(rentals: Rental[]) {
     const batchIndex = unscheduledBatches.indexOf(selectedCandidate.batch);
     const scheduledMinutes = selectedCandidate.canFit
       ? selectedCandidate.earliestReachableMinutes
-      : selectedCandidate.batch.latestMinutes;
+      : Math.max(
+          selectedCandidate.batch.earliestMinutes,
+          selectedCandidate.latestStartMinutes,
+        );
 
     unscheduledBatches.splice(batchIndex, 1);
-    selectedCandidate.batch.fields.forEach(({ rental, rentalIds }) => {
+    selectedCandidate.batch.fields.forEach(({ rental, rentalIds }, fieldIndex) => {
+      const fieldWorkflowMinutes = getFieldWorkflowMinutes(
+        selectedCandidate.batch,
+        scheduledMinutes,
+        fieldIndex,
+      );
+
       scheduledFields.push({
         rental,
         rentalIds,
-        workflowTime: minutesToTime(scheduledMinutes),
-        sortOrder: scheduledMinutes,
+        workflowTime: minutesToTime(fieldWorkflowMinutes),
+        sortOrder: fieldWorkflowMinutes,
       });
     });
     previousPark = selectedCandidate.batch.park;
-    previousWorkflowMinutes = scheduledMinutes;
+    previousWorkflowMinutes = getFieldWorkflowMinutes(
+      selectedCandidate.batch,
+      scheduledMinutes,
+      selectedCandidate.batch.fields.length - 1,
+    );
   }
 
   return scheduledFields;
