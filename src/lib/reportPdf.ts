@@ -40,7 +40,7 @@ type RgbColor = readonly [number, number, number];
 
 const pageWidth = 612;
 const marginX = 54;
-const footerY = 748;
+const contentBottomY = 704;
 const pelhamGreen: RgbColor = [0, 118, 73];
 const pelhamOrange: RgbColor = [221, 112, 36];
 const pelhamPurple: RgbColor = [91, 30, 82];
@@ -155,7 +155,7 @@ function drawFooter(doc: jsPDF) {
 }
 
 function ensureSpace(doc: jsPDF, y: number, needed: number, title: string, subtitle: string) {
-  if (y + needed <= footerY) {
+  if (y + needed <= contentBottomY) {
     return y;
   }
 
@@ -240,7 +240,7 @@ function drawTable(
     cursorY += rowHeight;
   });
 
-  return cursorY + 18;
+  return cursorY + 24;
 }
 
 function drawNotes(doc: jsPDF, notes: string[], y: number, title: string, subtitle: string) {
