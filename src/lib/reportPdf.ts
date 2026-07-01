@@ -26,7 +26,6 @@ type ShiftReportPdfInput = {
   workerSignature: string;
   lightLogs: LightLog[];
   activityEntries: ActivityLogEntry[];
-  notes: string[];
   photos: ReportPhoto[];
 };
 
@@ -244,34 +243,6 @@ function drawTable(
   return cursorY + 24;
 }
 
-function drawNotes(doc: jsPDF, notes: string[], y: number, title: string, subtitle: string) {
-  let cursorY = sectionTitle(doc, "Notes", y);
-  const noteText = notes.length > 0 ? notes : ["No notes recorded."];
-  const wrappedNotes = noteText.map((note) =>
-    doc.splitTextToSize(note, pageWidth - marginX * 2 - 46),
-  );
-  const boxHeight = Math.max(
-    46,
-    wrappedNotes.reduce((total, lines) => total + lines.length * 12 + 8, 18),
-  );
-
-  cursorY = ensureSpace(doc, cursorY, boxHeight, title, subtitle);
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(...ruleColor);
-  doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, boxHeight, 4, 4, "FD");
-
-  let noteY = cursorY + 20;
-  wrappedNotes.forEach((lines) => {
-    setText(doc, 10, "bold");
-    doc.text("•", marginX + 14, noteY);
-    setText(doc, 9);
-    doc.text(lines, marginX + 28, noteY);
-    noteY += lines.length * 12 + 8;
-  });
-
-  return cursorY + boxHeight + 18;
-}
-
 function addPhotos(doc: jsPDF, photos: ReportPhoto[], y: number, title: string, subtitle: string) {
   if (photos.length === 0) {
     return y;
@@ -363,20 +334,18 @@ export async function generateShiftReportPdf(input: ShiftReportPdfInput) {
       }),
       entry.park ?? "General",
       entry.action,
-      entry.notes ?? "",
     ]);
 
   y = drawTable(
     doc,
-    ["Time", "Location", "Activity", "Notes"],
-    timelineRows.length > 0 ? timelineRows : [["", "", "No activity logged.", ""]],
+    ["Time", "Location", "Activity"],
+    timelineRows.length > 0 ? timelineRows : [["", "", "No activity logged."]],
     y,
-    [70, 115, 145, 140],
+    [80, 150, 240],
     title,
     subtitle,
   );
 
-  y = drawNotes(doc, input.notes, y, title, subtitle);
   addPhotos(doc, input.photos, y, title, subtitle);
 
   savePdf(doc, `park-patrol-shift-report-${new Date().toLocaleDateString("en-CA")}.pdf`);
@@ -401,7 +370,7 @@ export async function generateWeeklyLightReportPdf(input: WeeklyLightReportPdfIn
   );
 
   y = sectionTitle(doc, "Weekly Light Usage", y);
-  y = drawTable(
+  drawTable(
     doc,
     ["Field", ...input.dayLabels],
     input.weeklyRows.map((row) => [
@@ -410,16 +379,6 @@ export async function generateWeeklyLightReportPdf(input: WeeklyLightReportPdfIn
     ]),
     y,
     [78, 56, 56, 56, 56, 56, 56, 56],
-    title,
-    subtitle,
-  );
-
-  drawNotes(
-    doc,
-    [
-      "This report summarizes recorded light activation and shutoff times for Park Patrol field rentals during the calendar week shown above.",
-    ],
-    y,
     title,
     subtitle,
   );

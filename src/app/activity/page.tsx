@@ -236,7 +236,6 @@ export default function ActivityPage() {
     clearLocalData,
     markShiftReportGenerated,
     reportPhotos,
-    reportNotes,
     shiftHistory,
     workerName,
     workerSignature,
@@ -296,7 +295,6 @@ export default function ActivityPage() {
       workerSignature,
       lightLogs: buildLightLogs(activityLog),
       activityEntries: activityLog,
-      notes: reportNotes,
       photos: reportPhotos,
     });
   }

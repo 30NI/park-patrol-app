@@ -164,7 +164,6 @@ export default function RentalsPage() {
     undoRentalGrooming,
     importRentals,
     deleteRental,
-    addActivity,
   } = usePatrol();
   const [groomingRental, setGroomingRental] = useState<Rental | null>(null);
   const [selectedImages, setSelectedImages] = useState<
@@ -245,13 +244,6 @@ export default function RentalsPage() {
       skippedLines: result.skippedLines,
       detectedCount: result.rentals.length,
       validation: result.validation,
-    });
-    addActivity({
-      category: "rental",
-      action: "Rental sheet scanned",
-      notes: `${result.methodLabel ?? "Offline OCR fallback"}: ${
-        detectedRentals.length
-      } rental${detectedRentals.length === 1 ? "" : "s"} parsed for review`,
     });
     setOcrMessage(
       `${result.methodLabel ?? "Offline OCR fallback"}: ${

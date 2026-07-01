@@ -798,15 +798,8 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       }));
 
       setRentals((current) => [...current, ...importedRentals]);
-      addActivity({
-        category: "rental",
-        action: "Rental sheet imported",
-        notes: `${importedRentals.length} rental${
-          importedRentals.length === 1 ? "" : "s"
-        } added`,
-      });
     },
-    [addActivity],
+    [],
   );
 
   const deleteRental = useCallback(
