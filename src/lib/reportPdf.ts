@@ -26,6 +26,7 @@ type ShiftReportPdfInput = {
   workerSignature: string;
   lightLogs: LightLog[];
   activityEntries: ActivityLogEntry[];
+  notes: string[];
   photos: ReportPhoto[];
 };
 
@@ -243,6 +244,34 @@ function drawTable(
   return cursorY + 24;
 }
 
+function drawReportNotes(doc: jsPDF, notes: string[], y: number, title: string, subtitle: string) {
+  let cursorY = sectionTitle(doc, "Notes", y);
+  const noteText = notes.length > 0 ? notes : ["No notes recorded."];
+  const wrappedNotes = noteText.map((note) =>
+    doc.splitTextToSize(note, pageWidth - marginX * 2 - 46),
+  );
+  const boxHeight = Math.max(
+    46,
+    wrappedNotes.reduce((total, lines) => total + lines.length * 12 + 8, 18),
+  );
+
+  cursorY = ensureSpace(doc, cursorY, boxHeight, title, subtitle);
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(...ruleColor);
+  doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, boxHeight, 4, 4, "FD");
+
+  let noteY = cursorY + 20;
+  wrappedNotes.forEach((lines) => {
+    setText(doc, 10, "bold");
+    doc.text("-", marginX + 14, noteY);
+    setText(doc, 9);
+    doc.text(lines, marginX + 28, noteY);
+    noteY += lines.length * 12 + 8;
+  });
+
+  return cursorY + boxHeight + 18;
+}
+
 function addPhotos(doc: jsPDF, photos: ReportPhoto[], y: number, title: string, subtitle: string) {
   if (photos.length === 0) {
     return y;
@@ -346,6 +375,7 @@ export async function generateShiftReportPdf(input: ShiftReportPdfInput) {
     subtitle,
   );
 
+  y = drawReportNotes(doc, input.notes, y, title, subtitle);
   addPhotos(doc, input.photos, y, title, subtitle);
 
   savePdf(doc, `park-patrol-shift-report-${new Date().toLocaleDateString("en-CA")}.pdf`);
