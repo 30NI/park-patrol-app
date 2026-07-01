@@ -16,7 +16,6 @@ const timeFormatter = new Intl.DateTimeFormat("en-CA", {
   minute: "2-digit",
 });
 
-const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1000;
 const lightFields = [
   { sport: "Soccer", label: "CP1", facilityPattern: /CP - Soccer #1/i },
   { sport: "Soccer", label: "CP2", facilityPattern: /CP - Soccer #2/i },
@@ -121,7 +120,19 @@ const shortDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "numeric",
 });
 
-function getReportDateRange(start: Date) {
+function getWeekStart(date: Date) {
+  const weekStart = new Date(date);
+  const dayOfWeek = weekStart.getDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+  weekStart.setDate(weekStart.getDate() - daysSinceMonday);
+  weekStart.setHours(12, 0, 0, 0);
+
+  return weekStart;
+}
+
+function getReportDateRange(shiftDate: string) {
+  const start = getWeekStart(new Date(`${shiftDate}T12:00:00`));
   const end = new Date(start);
 
   end.setDate(start.getDate() + 6);
@@ -254,15 +265,25 @@ export default function ActivityPage() {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   function generateLightReport() {
-    const reportStart = new Date();
-    const { start, end, days } = getReportDateRange(reportStart);
-    const oldestIncludedTime = reportStart.getTime() - sevenDaysInMilliseconds;
+    const { start, end, days } = getReportDateRange(activeShiftDate);
+    const startTime = new Date(start);
+    const endTime = new Date(end);
+
+    startTime.setHours(0, 0, 0, 0);
+    endTime.setHours(23, 59, 59, 999);
+
     const lightEntries = Object.values(shiftHistory)
       .flatMap((shift) => shift.activityLog)
       .filter(
-        (entry) =>
-          entry.category === "lights" &&
-          new Date(entry.timestamp).getTime() >= oldestIncludedTime,
+        (entry) => {
+          const entryTime = new Date(entry.timestamp).getTime();
+
+          return (
+            entry.category === "lights" &&
+            entryTime >= startTime.getTime() &&
+            entryTime <= endTime.getTime()
+          );
+        },
       )
       .sort(
         (a, b) =>
