@@ -590,7 +590,7 @@ export default function RentalsPage() {
   return (
     <main className="space-y-4 p-4">
       <header className="pt-2 text-center">
-        <h1 className="display-title text-4xl font-black">Rentals</h1>
+        <h1 className="page-title">Rentals</h1>
       </header>
 
       <section className="grid gap-3">
@@ -601,14 +601,14 @@ export default function RentalsPage() {
           <span className="text-5xl" aria-hidden="true">
             🛠️
           </span>
-          <span className="text-xl font-black text-slate-950">Manual Entry</span>
+          <span className="app-button-label text-slate-950">Manual Entry</span>
         </Link>
 
         <label className="relative flex min-h-28 cursor-pointer items-center gap-4 overflow-hidden rounded-2xl border-4 border-white bg-[#f5b971] p-4 text-left shadow-sm transition active:scale-[0.99]">
           <span className="text-5xl" aria-hidden="true">
             🖼️
           </span>
-          <span className="text-xl font-black text-slate-950">Add Sheets</span>
+          <span className="app-button-label text-slate-950">Add Sheets</span>
             <input
               type="file"
               accept="image/*,application/pdf"
@@ -771,7 +771,7 @@ export default function RentalsPage() {
                     Edit, delete, or add rows before tasks are generated.
                   </p>
                   {extractionMethodLabel ? (
-                    <p className="mt-2 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700">
+                    <p className="meta-text mt-2 inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-slate-700">
                       {extractionMethodLabel}
                     </p>
                   ) : null}
@@ -977,7 +977,7 @@ export default function RentalsPage() {
                       current === rental.id ? null : rental.id,
                     )
                   }
-                  className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-lg font-black text-slate-700 shadow-sm"
+                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-base font-bold text-slate-700 shadow-[0_1px_5px_rgba(15,23,42,0.18)]"
                   aria-label={`Open rental options for ${rental.facility}`}
                 >
                   ...
@@ -1004,10 +1004,10 @@ export default function RentalsPage() {
                 ) : null}
 
                 <div className="min-h-28 pr-10">
-                  <h2 className="text-base font-black leading-tight text-slate-950">
+                  <h2 className="card-title text-slate-950">
                     {rental.facility}
                   </h2>
-                  <p className="mt-2 flex w-full max-w-full justify-center whitespace-nowrap rounded-full bg-white/90 px-2 py-1.5 text-[11px] font-black text-slate-800 shadow-sm">
+                  <p className="meta-text mt-2 flex w-full max-w-full justify-center whitespace-nowrap rounded-full bg-white/90 px-2 py-1.5 text-slate-800 shadow-sm">
                     {rental.startTime} - {rental.endTime}
                   </p>
                 </div>
@@ -1017,7 +1017,7 @@ export default function RentalsPage() {
                     type="button"
                     onClick={() => checkRental(rental.id)}
                     disabled={rental.checkedIn}
-                    className={`min-h-14 rounded-xl px-3 text-sm font-black shadow-sm transition active:scale-[0.98] ${
+                    className={`min-h-14 rounded-xl px-3 text-sm font-bold shadow-sm transition active:scale-[0.98] ${
                       rental.checkedIn
                         ? "bg-slate-200 text-slate-500"
                         : "bg-slate-950 text-white"
@@ -1033,7 +1033,7 @@ export default function RentalsPage() {
                         : setGroomingRental(rental)
                     }
                     disabled={!isGroomable}
-                    className={`min-h-14 rounded-xl px-3 text-sm font-black shadow-sm transition active:scale-[0.98] ${
+                    className={`min-h-14 rounded-xl px-3 text-sm font-bold shadow-sm transition active:scale-[0.98] ${
                       !isGroomable
                         ? "bg-slate-200 text-slate-500 shadow-none"
                         : rental.groomingStatus

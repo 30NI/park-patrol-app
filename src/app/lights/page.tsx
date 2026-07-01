@@ -41,7 +41,7 @@ export default function LightsPage() {
   return (
     <main className="space-y-4 p-4">
       <header className="pt-2 text-center">
-        <h1 className="display-title text-4xl font-black">Lights</h1>
+        <h1 className="page-title">Lights</h1>
       </header>
 
       <div>
@@ -81,7 +81,7 @@ export default function LightsPage() {
                         current === task.id ? null : task.id,
                       )
                     }
-                    className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-lg font-black text-slate-700 shadow-sm"
+                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-base font-bold text-slate-700 shadow-[0_1px_5px_rgba(15,23,42,0.18)]"
                     aria-label={`Open light options for ${task.facility}`}
                   >
                     ...
@@ -108,10 +108,10 @@ export default function LightsPage() {
                     </div>
                   ) : null}
 
-                  <h2 className="pr-10 text-base font-black leading-tight text-slate-950">
+                  <h2 className="card-title pr-10 text-slate-950">
                     {task.facility}
                   </h2>
-                  <p className="mt-2 inline-flex self-start rounded-full bg-white/90 px-2 py-1 text-xs font-black text-slate-800 shadow-sm">
+                  <p className="meta-text mt-2 inline-flex self-start rounded-full bg-white/90 px-2 py-1 text-slate-800 shadow-sm">
                     {task.scheduledOnTime} - {task.scheduledOffTime}
                   </p>
                   <button
@@ -127,7 +127,7 @@ export default function LightsPage() {
                       }
                     }}
                     disabled={isComplete}
-                    className={`min-h-12 rounded-xl px-3 text-base font-black shadow-sm transition active:scale-[0.98] ${
+                    className={`min-h-12 rounded-xl px-3 text-sm font-bold shadow-sm transition active:scale-[0.98] ${
                       isComplete
                         ? "bg-slate-200 text-slate-500"
                         : "bg-slate-950 text-white"

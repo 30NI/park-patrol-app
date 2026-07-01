@@ -715,10 +715,10 @@ export default function Home() {
     <main className="space-y-4 p-4">
       <header className="flex items-end justify-between gap-3 pt-5">
         <div className="min-w-0 text-left">
-          <p className="display-title text-xs font-black uppercase text-slate-600">
+          <p className="meta-text uppercase text-slate-600">
             {formatter.format(new Date())}
           </p>
-          <h1 className="display-title mt-1 text-3xl font-black leading-tight">
+          <h1 className="display-title mt-1 text-3xl font-extrabold leading-tight">
             Hello {workerName || "_____"}
           </h1>
         </div>
@@ -752,8 +752,8 @@ export default function Home() {
 
       <section className="rounded-2xl border-[4px] border-white bg-white/70 p-3 shadow-sm">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-sm font-black text-slate-950">Shift Progress</p>
-          <p className="text-xs font-black text-slate-600">
+          <p className="text-sm font-bold text-slate-950">Shift Progress</p>
+          <p className="meta-text text-slate-600">
             {shiftProgress.label}
           </p>
         </div>
@@ -775,12 +775,12 @@ export default function Home() {
 
       <section className="rounded-2xl bg-[#b9e4f7] p-0">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="display-title text-4xl font-black">Next Task</h2>
+          <h2 className="page-title">Next Task</h2>
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsRouteMenuOpen((current) => !current)}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl font-black text-slate-950 shadow-sm"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-950 shadow-[0_1px_5px_rgba(15,23,42,0.18)]"
               aria-label="Open route options"
             >
               ...
@@ -790,14 +790,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={toggleRouteEditing}
-                  className="block min-h-11 w-full px-4 text-left text-sm font-black text-slate-950"
+                  className="block min-h-11 w-full px-4 text-left text-sm font-bold text-slate-950"
                 >
                   {isEditingRoute ? "Done Editing" : "Edit Route"}
                 </button>
                 <button
                   type="button"
                   onClick={addRouteTask}
-                  className="block min-h-11 w-full border-t border-slate-200 px-4 text-left text-sm font-black text-slate-950"
+                  className="block min-h-11 w-full border-t border-slate-200 px-4 text-left text-sm font-bold text-slate-950"
                 >
                   Add Task
                 </button>
@@ -808,7 +808,7 @@ export default function Home() {
         <div className="mt-3 space-y-3">
           {nextTasks.length === 0 ? (
             <div className="rounded-2xl border-[4px] border-white bg-white/75 p-5 text-center shadow-sm">
-              <p className="text-lg font-black text-slate-950">
+              <p className="text-lg font-bold text-slate-950">
                 No upcoming tasks
               </p>
             </div>
@@ -880,7 +880,7 @@ export default function Home() {
                       type="button"
                       onClick={() => moveRouteTask(step.id, -1)}
                       disabled={index === 0}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-xl font-black text-slate-950 disabled:opacity-35"
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-lg font-bold text-slate-950 disabled:opacity-35"
                       aria-label={`Move ${step.title} up`}
                     >
                       ↑
@@ -889,7 +889,7 @@ export default function Home() {
                       type="button"
                       onClick={() => moveRouteTask(step.id, 1)}
                       disabled={index === nextTasks.length - 1}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-xl font-black text-slate-950 disabled:opacity-35"
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-lg font-bold text-slate-950 disabled:opacity-35"
                       aria-label={`Move ${step.title} down`}
                     >
                       ↓
@@ -921,7 +921,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setShowCompletedTasks((current) => !current)}
-            className="min-h-14 rounded-lg border-2 border-slate-950 bg-white px-4 text-base font-black text-slate-950 shadow-sm"
+            className="min-h-14 rounded-lg border-2 border-slate-950 bg-white px-4 text-sm font-bold text-slate-950 shadow-sm"
           >
             {showCompletedTasks ? "Hide Completed" : "View Completed"}
           </button>
@@ -933,14 +933,14 @@ export default function Home() {
               }
             }}
             disabled={Boolean(shiftEndedAt)}
-            className="min-h-14 rounded-lg bg-slate-950 px-4 text-base font-bold text-white shadow-sm disabled:bg-slate-300 disabled:text-slate-600"
+            className="min-h-14 rounded-lg bg-slate-950 px-4 text-sm font-bold text-white shadow-sm disabled:bg-slate-300 disabled:text-slate-600"
           >
             {shiftEndedAt ? "Shift Ended" : "End Shift"}
           </button>
         </div>
         {showCompletedTasks ? (
           <section className="mt-3 space-y-2 rounded-2xl border-[4px] border-white bg-white/75 p-3 shadow-sm">
-            <h3 className="text-lg font-black">Completed</h3>
+            <h3 className="text-lg font-bold">Completed</h3>
             {completedTasks.length === 0 ? (
               <p className="text-sm font-semibold text-slate-600">
                 Nothing completed yet.
@@ -951,7 +951,7 @@ export default function Home() {
                   key={task.id}
                   className="rounded-xl bg-white p-3 shadow-sm"
                 >
-                  <p className="font-black text-slate-950">
+                  <p className="font-bold text-slate-950">
                     {task.time ? `${formatTimelineTime(task)} - ` : ""}
                     {task.title}
                   </p>

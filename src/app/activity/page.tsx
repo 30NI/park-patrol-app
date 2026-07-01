@@ -343,7 +343,7 @@ export default function ActivityPage() {
   return (
     <main className="space-y-4 p-4">
       <header className="pt-2 text-center no-print">
-        <h1 className="display-title text-4xl font-black">Log</h1>
+        <h1 className="page-title">Log</h1>
       </header>
 
       <section className="grid gap-3 no-print">
@@ -355,7 +355,7 @@ export default function ActivityPage() {
           <span className="text-5xl" aria-hidden="true">
             📝
           </span>
-          <span className="text-xl font-black text-slate-950">Leave Note</span>
+          <span className="app-button-label text-slate-950">Leave Note</span>
         </button>
         <button
           type="button"
@@ -363,7 +363,7 @@ export default function ActivityPage() {
           className="flex min-h-32 items-center gap-4 rounded-2xl border-4 border-white bg-[#a7d8f0] p-4 text-left shadow-sm transition active:scale-[0.99]"
         >
           <CameraIcon />
-          <span className="text-xl font-black text-slate-950">Take Photo</span>
+          <span className="app-button-label text-slate-950">Take Photo</span>
         </button>
         <input
           ref={photoInputRef}
@@ -381,7 +381,7 @@ export default function ActivityPage() {
           <span className="text-5xl" aria-hidden="true">
             🖨️
           </span>
-          <span className="text-xl font-black text-slate-950">
+          <span className="app-button-label text-slate-950">
             Generate Shift Report
           </span>
         </button>
@@ -393,7 +393,7 @@ export default function ActivityPage() {
           <span className="text-5xl" aria-hidden="true">
             💡
           </span>
-          <span className="text-xl font-black text-slate-950">
+          <span className="app-button-label text-slate-950">
             Generate Light Report
           </span>
         </button>

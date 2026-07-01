@@ -179,7 +179,7 @@ export function BottomNavigation() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 text-[11px] font-black transition ${
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 text-[11px] font-bold leading-tight transition ${
                 isActive
                   ? activeClassName
                   : "border-transparent text-slate-600 hover:bg-slate-100"

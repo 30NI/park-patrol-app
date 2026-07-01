@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { parks, type ParkName } from "@/constants/parks";
 import type { GarbageCheckType, TimedCheckStatus } from "@/types/activity";
+import { ParkCheckCard } from "../components/ParkCheckCard";
 import { usePatrol } from "../context/PatrolContext";
 
 const garbageCheckTypes: GarbageCheckType[] = ["garbageCans", "litter"];
@@ -12,6 +13,8 @@ const cardStyles: Record<TimedCheckStatus, string> = {
   Yellow: "border-yellow-700 bg-yellow-400 text-slate-950",
   Red: "border-red-900 bg-red-500 text-white",
 };
+const baseCardStyle = "border-slate-950 bg-slate-300 text-slate-950";
+const checkButtonStyle = "border-2 border-slate-950 bg-white text-slate-950";
 
 const timeFormatter = new Intl.DateTimeFormat("en-CA", {
   hour: "numeric",
@@ -86,11 +89,11 @@ export default function GarbagePage() {
   return (
     <main className="space-y-4 p-4 pb-8">
       <header className="pt-2 text-center">
-        <h1 className="display-title text-4xl font-black">Garbage</h1>
+        <h1 className="page-title">Garbage</h1>
       </header>
 
       {blockedPark ? (
-        <p className="rounded-2xl border-4 border-white bg-white/80 p-3 text-sm font-black text-slate-800 shadow-sm">
+        <p className="rounded-2xl border-4 border-white bg-white/80 p-3 text-sm font-semibold leading-snug text-slate-800 shadow-sm">
           {blockedPark} garbage was already checked within the last 30 minutes.
         </p>
       ) : null}
@@ -103,53 +106,24 @@ export default function GarbagePage() {
           const canUndo = canUndoGarbage(park);
 
           return (
-            <article
+            <ParkCheckCard
               key={park}
-              className={`relative aspect-square min-h-36 rounded-2xl border-[6px] p-3 shadow-sm ${
-                isLastOddTile ? "col-span-2 mx-auto w-[calc(50%-0.375rem)]" : ""
-              } ${
-                status
-                  ? cardStyles[status]
-                  : "border-slate-950 bg-slate-300 text-slate-950"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenMenuPark((current) => (current === park ? null : park))
-                }
-                className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-lg font-black text-slate-700 shadow-sm"
-                aria-label={`Open garbage options for ${park}`}
-              >
-                ...
-              </button>
-
-              {openMenuPark === park ? (
-                <div className="absolute right-3 top-14 z-30 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => handleUndo(park)}
-                    disabled={!canUndo}
-                    className="block min-h-10 w-full rounded-lg px-3 text-left text-xs font-bold text-slate-950 disabled:text-slate-300"
-                  >
-                    Undo Garbage
-                  </button>
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => handleCheck(park)}
-                className="absolute inset-3 flex flex-col items-start justify-between rounded-xl text-left transition active:scale-[0.98]"
-              >
-                <span className="pr-10 text-lg font-black leading-tight">
-                  {park}
-                </span>
-                <span className="max-w-full rounded-full border-2 border-slate-950 bg-white px-3 py-1.5 text-sm font-black text-slate-950 shadow-sm">
-                  {checkedAt ? timeFormatter.format(checkedAt) : "Check Garbage"}
-                </span>
-              </button>
-            </article>
+              park={park}
+              status={status}
+              checkedLabel={checkedAt ? timeFormatter.format(checkedAt) : null}
+              baseClassName={baseCardStyle}
+              statusClassNames={cardStyles}
+              checkButtonClassName={checkButtonStyle}
+              isCentered={isLastOddTile}
+              isMenuOpen={openMenuPark === park}
+              canUndo={canUndo}
+              undoLabel="Undo Garbage"
+              onToggleMenu={() =>
+                setOpenMenuPark((current) => (current === park ? null : park))
+              }
+              onCheck={() => handleCheck(park)}
+              onUndo={() => handleUndo(park)}
+            />
           );
         })}
       </div>

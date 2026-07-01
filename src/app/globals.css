@@ -23,6 +23,32 @@ body {
   letter-spacing: 0;
 }
 
+.page-title {
+  font-family: "Trebuchet MS", var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.meta-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.app-button-label {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;
