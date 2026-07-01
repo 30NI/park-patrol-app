@@ -3,7 +3,7 @@ export type ShiftTimelineTask = {
   time: string;
   endTime?: string;
   sortOrder: number;
-  category: "washroom" | "rental" | "lights" | "garbage";
+  category: "washroom" | "rental" | "lights" | "garbage" | "custom";
   title: string;
   detail: string;
   href: string;

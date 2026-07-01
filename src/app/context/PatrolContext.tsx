@@ -36,6 +36,13 @@ export type ShiftReportPhoto = {
   dataUrl: string;
 };
 
+export type CustomRouteTask = {
+  id: string;
+  time: string;
+  title: string;
+  completedAt: string | null;
+};
+
 export type StoredShiftState = {
   date: string;
   rentals: Rental[];
@@ -52,6 +59,7 @@ export type StoredShiftState = {
   reportPhotos: ShiftReportPhoto[];
   routeTaskOrder: string[];
   routeTaskTimes: Record<string, string>;
+  customRouteTasks: CustomRouteTask[];
 };
 
 type PersistedPatrolStateV1 = {
@@ -88,6 +96,7 @@ type PatrolContextValue = {
   activityLog: ActivityLogEntry[];
   routeTaskOrder: string[];
   routeTaskTimes: Record<string, string>;
+  customRouteTasks: CustomRouteTask[];
   addRental: (rental: RentalInput) => string;
   importRentals: (rentals: RentalInput[]) => void;
   deleteRental: (rentalId: string) => void;
@@ -122,6 +131,8 @@ type PatrolContextValue = {
   addReportPhoto: (dataUrl: string) => void;
   setRouteTaskOrder: (taskIds: string[]) => void;
   setRouteTaskTime: (taskId: string, time: string) => void;
+  addCustomRouteTask: (time: string, title: string) => string;
+  completeCustomRouteTask: (taskId: string) => void;
   resetRouteEdits: () => void;
   startNewShift: () => void;
   clearLocalData: () => void;
@@ -265,6 +276,7 @@ function createEmptyShiftState(date = getShiftDate()): StoredShiftState {
     reportPhotos: [],
     routeTaskOrder: [],
     routeTaskTimes: {},
+    customRouteTasks: [],
   };
 }
 
@@ -292,6 +304,9 @@ function normalizeShiftState(
       ? shift.routeTaskOrder
       : [],
     routeTaskTimes: shift?.routeTaskTimes ?? {},
+    customRouteTasks: Array.isArray(shift?.customRouteTasks)
+      ? shift.customRouteTasks
+      : [],
   };
 }
 
@@ -400,6 +415,9 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
   const [routeTaskTimes, setRouteTaskTimes] = useState<Record<string, string>>(
     {},
   );
+  const [customRouteTasks, setCustomRouteTasks] = useState<CustomRouteTask[]>(
+    [],
+  );
   const [now, setNow] = useState(() => new Date());
   const [hasLoadedSavedState, setHasLoadedSavedState] = useState(false);
 
@@ -441,6 +459,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       setActivityLog(activeShift.activityLog);
       setRouteTaskOrderState(activeShift.routeTaskOrder);
       setRouteTaskTimes(activeShift.routeTaskTimes);
+      setCustomRouteTasks(activeShift.customRouteTasks);
 
       setHasLoadedSavedState(true);
     }, 0);
@@ -469,6 +488,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
     };
     const persistedState: PersistedPatrolStateV2 = {
       version: 2,
@@ -492,6 +512,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     rentals,
     routeTaskOrder,
     routeTaskTimes,
+    customRouteTasks,
     shiftHistory,
     shiftEndedAt,
     shiftReportGeneratedAt,
@@ -639,6 +660,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
     };
 
     setActivityLog(endedActivityLog);
@@ -657,6 +679,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     rentals,
     routeTaskOrder,
     routeTaskTimes,
+    customRouteTasks,
     shiftReportGeneratedAt,
     shiftStartedAt,
     washroomCheckedAt,
@@ -682,6 +705,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       reportPhotos,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
     };
     const nextShift = createEmptyShiftState(today);
 
@@ -705,6 +729,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     setActivityLog(nextShift.activityLog);
     setRouteTaskOrderState(nextShift.routeTaskOrder);
     setRouteTaskTimes(nextShift.routeTaskTimes);
+    setCustomRouteTasks(nextShift.customRouteTasks);
   }, [
     activeShiftDate,
     activityLog,
@@ -715,6 +740,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     rentals,
     routeTaskOrder,
     routeTaskTimes,
+    customRouteTasks,
     shiftEndedAt,
     shiftReportGeneratedAt,
     shiftStartedAt,
@@ -745,6 +771,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
     setActivityLog(nextShift.activityLog);
     setRouteTaskOrderState(nextShift.routeTaskOrder);
     setRouteTaskTimes(nextShift.routeTaskTimes);
+    setCustomRouteTasks(nextShift.customRouteTasks);
   }, []);
 
   const setRouteTaskOrder = useCallback((taskIds: string[]) => {
@@ -757,6 +784,60 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       [taskId]: time,
     }));
   }, []);
+
+  const addCustomRouteTask = useCallback((time: string, title: string) => {
+    const taskId = `custom-task-${crypto.randomUUID()}`;
+
+    setCustomRouteTasks((current) => [
+      ...current,
+      {
+        id: taskId,
+        time,
+        title,
+        completedAt: null,
+      },
+    ]);
+
+    return taskId;
+  }, []);
+
+  const completeCustomRouteTask = useCallback(
+    (taskId: string) => {
+      const completedAt = new Date().toISOString();
+      let completedTitle = "";
+
+      setCustomRouteTasks((current) =>
+        current.map((task) => {
+          if (task.id !== taskId || task.completedAt) {
+            return task;
+          }
+
+          completedTitle = task.title;
+
+          return {
+            ...task,
+            completedAt,
+          };
+        }),
+      );
+
+      if (!completedTitle) {
+        return;
+      }
+
+      setActivityLog((current) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: completedAt,
+          category: "report",
+          action: completedTitle,
+          targetId: taskId,
+        },
+        ...current,
+      ]);
+    },
+    [],
+  );
 
   const resetRouteEdits = useCallback(() => {
     setRouteTaskOrderState([]);
@@ -1174,6 +1255,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
         reportPhotos,
         routeTaskOrder,
         routeTaskTimes,
+        customRouteTasks,
       },
     }),
     [
@@ -1186,6 +1268,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       rentals,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
       shiftHistory,
       shiftEndedAt,
       shiftReportGeneratedAt,
@@ -1216,6 +1299,9 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       activityLog,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
+      addCustomRouteTask,
+      completeCustomRouteTask,
       addRental,
       importRentals,
       deleteRental,
@@ -1249,6 +1335,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       activeShiftDate,
       activityLog,
       addActivity,
+      addCustomRouteTask,
       addRental,
       addReportNote,
       addReportPhoto,
@@ -1262,6 +1349,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       checkGarbage,
       checkRental,
       checkWashroom,
+      completeCustomRouteTask,
       garbageCheckedAt,
       garbageStatuses,
       lightTaskStates,
@@ -1272,6 +1360,7 @@ export function PatrolProvider({ children }: { children: ReactNode }) {
       resetRouteEdits,
       routeTaskOrder,
       routeTaskTimes,
+      customRouteTasks,
       setRentalGrooming,
       setRouteTaskOrder,
       setRouteTaskTime,

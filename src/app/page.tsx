@@ -6,6 +6,7 @@ import { parks, type ParkName } from "@/constants/parks";
 import { getLightTasks } from "@/lib/lights";
 import { buildShiftTimeline } from "@/lib/shiftPlanner";
 import { timeToMinutes } from "@/lib/time";
+import type { CustomRouteTask } from "./context/PatrolContext";
 import type { ShiftTimelineTask } from "@/types/shift";
 import { usePatrol } from "./context/PatrolContext";
 
@@ -235,9 +236,25 @@ function applyRouteEdits(
   });
 }
 
+function buildCustomTimelineTasks(customRouteTasks: CustomRouteTask[]) {
+  return customRouteTasks.map<ShiftTimelineTask>((task) => ({
+    id: task.id,
+    time: task.time,
+    sortOrder: timeToMinutes(task.time),
+    category: "custom",
+    title: task.title,
+    detail: "Added task",
+    href: "/",
+    targetId: task.id,
+  }));
+}
+
 export default function Home() {
   const {
+    addCustomRouteTask,
+    completeCustomRouteTask,
     rentals,
+    customRouteTasks,
     washroomCheckedAt,
     garbageCheckedAt,
     endShift,
@@ -252,6 +269,7 @@ export default function Home() {
     workerName,
   } = usePatrol();
   const [isEditingRoute, setIsEditingRoute] = useState(false);
+  const [isRouteMenuOpen, setIsRouteMenuOpen] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [isStartOpen, setIsStartOpen] = useState(false);
   const [starterName, setStarterName] = useState("");
@@ -321,10 +339,20 @@ export default function Home() {
       ),
     [automaticTimeline],
   );
+  const customTimeline = useMemo(
+    () => buildCustomTimelineTasks(customRouteTasks),
+    [customRouteTasks],
+  );
   const timeline = useMemo(
     () =>
-      applyRouteEdits(automaticRouteTimeline, routeTaskOrder, routeTaskTimes),
-    [automaticRouteTimeline, routeTaskOrder, routeTaskTimes],
+      applyRouteEdits(
+        [...automaticRouteTimeline, ...customTimeline].sort(
+          (a, b) => a.sortOrder - b.sortOrder,
+        ),
+        routeTaskOrder,
+        routeTaskTimes,
+      ),
+    [automaticRouteTimeline, customTimeline, routeTaskOrder, routeTaskTimes],
   );
   const nextTasks = timeline.filter((task) => !isTimelineTaskDone(task));
   const completedTasks: ShiftTimelineTask[] = [
@@ -409,6 +437,12 @@ export default function Home() {
         : state?.turnedOff ?? false;
     }
 
+    if (task.category === "custom") {
+      return customRouteTasks.some(
+        (customTask) => customTask.id === task.id && customTask.completedAt,
+      );
+    }
+
     return false;
   }
 
@@ -443,7 +477,7 @@ export default function Home() {
     }
 
     if (
-      nextTasks.some(
+      timeline.some(
         (otherTask) => otherTask.id !== task.id && otherTask.time === normalizedTime,
       )
     ) {
@@ -452,6 +486,47 @@ export default function Home() {
     }
 
     setRouteTaskTime(task.id, normalizedTime);
+  }
+
+  function addRouteTask() {
+    setIsRouteMenuOpen(false);
+    const title = window.prompt("Task title");
+
+    if (title === null) {
+      return;
+    }
+
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
+      window.alert("Enter a task title.");
+      return;
+    }
+
+    const time = window.prompt("Task time", "6:15 PM");
+
+    if (time === null) {
+      return;
+    }
+
+    const normalizedTime = normalizeTimelineTime(time.trim());
+
+    if (!normalizedTime) {
+      window.alert("Use a time like 6:15 PM.");
+      return;
+    }
+
+    if (timeline.some((task) => task.time === normalizedTime)) {
+      window.alert("Another task already has that time.");
+      return;
+    }
+
+    addCustomRouteTask(normalizedTime, trimmedTitle);
+  }
+
+  function toggleRouteEditing() {
+    setIsRouteMenuOpen(false);
+    setIsEditingRoute((current) => !current);
   }
 
   function getSignaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -658,13 +733,34 @@ export default function Home() {
       <section className="rounded-2xl bg-[#b9e4f7] p-0">
         <div className="flex items-center justify-between gap-3">
           <h2 className="display-title text-4xl font-black">Next Task</h2>
-          <button
-            type="button"
-            onClick={() => setIsEditingRoute((current) => !current)}
-            className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white"
-          >
-            {isEditingRoute ? "Done" : "Edit Route"}
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsRouteMenuOpen((current) => !current)}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl font-black text-slate-950 shadow-sm"
+              aria-label="Open route options"
+            >
+              ...
+            </button>
+            {isRouteMenuOpen ? (
+              <div className="absolute right-0 top-14 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={toggleRouteEditing}
+                  className="block min-h-11 w-full px-4 text-left text-sm font-black text-slate-950"
+                >
+                  {isEditingRoute ? "Done Editing" : "Edit Route"}
+                </button>
+                <button
+                  type="button"
+                  onClick={addRouteTask}
+                  className="block min-h-11 w-full border-t border-slate-200 px-4 text-left text-sm font-black text-slate-950"
+                >
+                  Add Task
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className="mt-3 space-y-3">
           {nextTasks.length === 0 ? (
@@ -758,6 +854,15 @@ export default function Home() {
                   </div>
                 </div>
               </article>
+            ) : step.category === "custom" ? (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => completeCustomRouteTask(step.id)}
+                className={`${cardClassName} w-full text-left`}
+              >
+                {cardContent}
+              </button>
             ) : (
               <Link
                 key={step.id}
