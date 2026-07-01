@@ -103,6 +103,12 @@ function getRentalFieldClass(rental: Rental | RentalInput, isDone = false) {
   return `${fieldBase} ${isDone ? "ring-2 ring-green-500" : ""}`;
 }
 
+function canGroomRental(rental: Rental | RentalInput) {
+  const groomingText = `${rental.eventName} ${rental.scheduleType}`.toLowerCase();
+
+  return !/practices?|no maintenance/.test(groomingText);
+}
+
 async function preprocessImageForOcr(file: File) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(4, Math.max(2, 3200 / bitmap.width));
@@ -211,6 +217,11 @@ export default function RentalsPage() {
     rental: Rental,
     groomingStatus: "alreadyGroomed" | "groomedOnShift",
   ) {
+    if (!canGroomRental(rental)) {
+      setGroomingRental(null);
+      return;
+    }
+
     setRentalGrooming(rental.id, groomingStatus);
     setGroomingRental(null);
   }
@@ -956,14 +967,17 @@ export default function RentalsPage() {
 
         {sortedRentals.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
-            {sortedRentals.map((rental) => (
-              <article
-                key={rental.id}
-                className={`relative flex min-h-72 flex-col justify-between rounded-2xl border-[6px] p-4 shadow-sm ${getRentalFieldClass(
-                  rental,
-                  rental.checkedIn,
-                )}`}
-              >
+            {sortedRentals.map((rental) => {
+              const isGroomable = canGroomRental(rental);
+
+              return (
+                <article
+                  key={rental.id}
+                  className={`relative flex min-h-72 flex-col justify-between rounded-2xl border-[6px] p-4 shadow-sm ${getRentalFieldClass(
+                    rental,
+                    rental.checkedIn,
+                  )}`}
+                >
                 <button
                   type="button"
                   onClick={() =>
@@ -1026,17 +1040,25 @@ export default function RentalsPage() {
                         ? handleUndoGrooming(rental.id)
                         : setGroomingRental(rental)
                     }
+                    disabled={!isGroomable}
                     className={`min-h-14 rounded-xl px-3 text-sm font-black shadow-sm transition active:scale-[0.98] ${
-                      rental.groomingStatus
+                      !isGroomable
+                        ? "bg-slate-200 text-slate-500 shadow-none"
+                        : rental.groomingStatus
                         ? "bg-white text-slate-950"
                         : "bg-slate-950 text-white"
                     }`}
                   >
-                    {rental.groomingStatus ? "Groomed" : "Groomed"}
+                    {!isGroomable
+                      ? "No Grooming"
+                      : rental.groomingStatus
+                        ? "Groomed"
+                        : "Groomed"}
                   </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </div>
