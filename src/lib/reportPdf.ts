@@ -298,7 +298,7 @@ function savePdf(doc: jsPDF, filename: string) {
 export async function generateShiftReportPdf(input: ShiftReportPdfInput) {
   await loadPelhamLogoDataUrl();
   const title = "Park Patrol Shift Report";
-  const subtitle = "Public Works and Parks Department";
+  const subtitle = "Facilities";
   const doc = createDocument();
   let y = drawHeader(doc, title, subtitle);
 
@@ -376,7 +376,7 @@ export async function generateShiftReportPdf(input: ShiftReportPdfInput) {
 export async function generateWeeklyLightReportPdf(input: WeeklyLightReportPdfInput) {
   await loadPelhamLogoDataUrl();
   const title = "Park Patrol Weekly Light Report";
-  const subtitle = "Public Works and Parks Department";
+  const subtitle = "Facilities";
   const doc = createDocument();
   let y = drawHeader(doc, title, subtitle);
 
