@@ -288,6 +288,7 @@ export default function Home() {
   const {
     addCustomRouteTask,
     completeCustomRouteTask,
+    deleteCustomRouteTask,
     rentals,
     customRouteTasks,
     washroomCheckedAt,
@@ -295,7 +296,9 @@ export default function Home() {
     endShift,
     lightTaskStates,
     routeTaskOrder,
+    routeTaskHiddenIds,
     routeTaskTimes,
+    hideRouteTask,
     setRouteTaskOrder,
     setRouteTaskTime,
     shiftEndedAt,
@@ -383,11 +386,17 @@ export default function Home() {
       applyRouteEdits(
         [...automaticRouteTimeline, ...customTimeline].sort(
           (a, b) => a.sortOrder - b.sortOrder,
-        ),
+        ).filter((task) => !routeTaskHiddenIds.includes(task.id)),
         routeTaskOrder,
         routeTaskTimes,
       ),
-    [automaticRouteTimeline, customTimeline, routeTaskOrder, routeTaskTimes],
+    [
+      automaticRouteTimeline,
+      customTimeline,
+      routeTaskHiddenIds,
+      routeTaskOrder,
+      routeTaskTimes,
+    ],
   );
   const nextTasks = timeline.filter((task) => !isTimelineTaskDone(task));
   const completedTasks: ShiftTimelineTask[] = [
@@ -570,6 +579,19 @@ export default function Home() {
   function toggleRouteEditing() {
     setIsRouteMenuOpen(false);
     setIsEditingRoute((current) => !current);
+  }
+
+  function deleteRouteTask(task: ShiftTimelineTask) {
+    if (!window.confirm(`Delete "${task.title}" from the dashboard route?`)) {
+      return;
+    }
+
+    if (task.category === "custom") {
+      deleteCustomRouteTask(task.id);
+      return;
+    }
+
+    hideRouteTask(task.id);
   }
 
   function getSignaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -876,6 +898,14 @@ export default function Home() {
                 <div className="grid grid-cols-[1fr_auto] items-start gap-3">
                   {cardContent}
                   <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => deleteRouteTask(step)}
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-2xl font-bold leading-none text-red-600"
+                      aria-label={`Delete ${step.title}`}
+                    >
+                      -
+                    </button>
                     <button
                       type="button"
                       onClick={() => moveRouteTask(step.id, -1)}
