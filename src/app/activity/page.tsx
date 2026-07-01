@@ -20,6 +20,12 @@ const timeFormatter = new Intl.DateTimeFormat("en-CA", {
   minute: "2-digit",
 });
 
+const compactTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
 const lightFields = [
   { sport: "Soccer", label: "CP1", facilityPattern: /CP - Soccer #1/i },
   { sport: "Soccer", label: "CP2", facilityPattern: /CP - Soccer #2/i },
@@ -146,6 +152,13 @@ function getLightTime(entry: ActivityLogEntry) {
   return timeFormatter.format(new Date(entry.timestamp)).replace(/\s/g, " ");
 }
 
+function getCompactLightTime(entry: ActivityLogEntry) {
+  return compactTimeFormatter
+    .format(new Date(entry.timestamp))
+    .replace(/\s/g, "")
+    .replace(/a\.?m\.?|p\.?m\.?/i, "");
+}
+
 function buildLightLogs(entries: ActivityLogEntry[]) {
   const logs = lightFields.map<LightLog>((field) => ({
     sport: field.sport,
@@ -215,11 +228,11 @@ function buildWeeklyLightRows(entries: ActivityLogEntry[], days: Date[]) {
       }
 
       if (/turned on/i.test(entry.action)) {
-        row.days[dayIndex].on = getLightTime(entry);
+        row.days[dayIndex].on = getCompactLightTime(entry);
       }
 
       if (/turned off/i.test(entry.action)) {
-        row.days[dayIndex].off = getLightTime(entry);
+        row.days[dayIndex].off = getCompactLightTime(entry);
       }
     });
 
