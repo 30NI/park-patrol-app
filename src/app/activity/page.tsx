@@ -1,6 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import {
+  generateShiftReportPdf,
+  generateWeeklyLightReportPdf,
+} from "@/lib/reportPdf";
 import type { ActivityLogEntry } from "@/types/activity";
 import { usePatrol } from "../context/PatrolContext";
 
@@ -25,7 +29,6 @@ const lightFields = [
   { sport: "Baseball", label: "CP3", facilityPattern: /CP - Diamond #3/i },
   { sport: "Baseball", label: "HB1", facilityPattern: /HBP - Diamond #1/i },
 ];
-type ReportType = "shift" | "lights";
 type LightField = (typeof lightFields)[number];
 type LightLog = {
   sport: string;
@@ -38,12 +41,6 @@ type WeeklyLightRow = {
   label: string;
   days: { on: string; off: string }[];
 };
-type LightReportSnapshot = {
-  rangeLabel: string;
-  dayLabels: string[];
-  weeklyRows: WeeklyLightRow[];
-};
-
 function CameraIcon() {
   return (
     <svg viewBox="0 0 64 64" aria-hidden="true" className="h-14 w-14">
@@ -92,27 +89,8 @@ async function compressReportPhoto(file: File) {
   return canvas.toDataURL("image/jpeg", 0.78);
 }
 
-function printReport() {
-  window.setTimeout(() => window.print(), 50);
-}
-
 function formatShiftDate(shiftDate: string) {
   return dateFormatter.format(new Date(`${shiftDate}T12:00:00`));
-}
-
-function formatActivityEntry(entry: ActivityLogEntry) {
-  const parts = [
-    timeFormatter.format(new Date(entry.timestamp)),
-    entry.park ?? "General",
-    entry.category,
-    entry.action,
-  ];
-
-  if (entry.notes) {
-    parts.push(entry.notes);
-  }
-
-  return parts.join(" | ");
 }
 
 const shortDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -259,9 +237,6 @@ export default function ActivityPage() {
   } = usePatrol();
   const [noteDraft, setNoteDraft] = useState("");
   const [isNoteOpen, setIsNoteOpen] = useState(false);
-  const [reportType, setReportType] = useState<ReportType | null>(null);
-  const [lightReportSnapshot, setLightReportSnapshot] =
-    useState<LightReportSnapshot | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   function generateLightReport() {
@@ -290,27 +265,32 @@ export default function ActivityPage() {
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
 
-    setLightReportSnapshot({
+    generateWeeklyLightReportPdf({
       rangeLabel: `${shortDateFormatter.format(start)} - ${shortDateFormatter.format(end)}`,
       dayLabels: days.map((day) => shortDateFormatter.format(day)),
       weeklyRows: buildWeeklyLightRows(lightEntries, days),
     });
-    setReportType("lights");
     addActivity({
       category: "report",
       action: "Light usage report generated",
     });
-    printReport();
   }
 
   function generateShiftReport() {
-    setReportType("shift");
     markShiftReportGenerated();
     addActivity({
       category: "report",
       action: "Shift report generated",
     });
-    printReport();
+    generateShiftReportPdf({
+      shiftDateLabel: formatShiftDate(activeShiftDate),
+      workerName,
+      workerSignature,
+      lightLogs: buildLightLogs(activityLog),
+      activityEntries: activityLog,
+      notes: reportNotes,
+      photos: reportPhotos,
+    });
   }
 
   function saveNote() {
@@ -397,166 +377,6 @@ export default function ActivityPage() {
           </span>
         </button>
       </section>
-
-      {reportType ? (
-        <section
-          className={`printable-report hidden bg-white text-slate-950 ${
-            reportType === "lights" ? "light-report" : ""
-          }`}
-        >
-          {reportType === "shift" ? (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <p>Date: {formatShiftDate(activeShiftDate)}</p>
-                <div className="flex items-center gap-3">
-                  <p>Name / Signature: {workerName || "B"}</p>
-                  {workerSignature ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={workerSignature}
-                      alt=""
-                      className="h-12 w-32 object-contain"
-                    />
-                  ) : null}
-                </div>
-              </div>
-
-              <section>
-                <h2 className="text-xl font-bold">Light Rentals</h2>
-                <div className="mt-3 grid grid-cols-2 gap-6">
-                  {["Soccer", "Baseball"].map((sport) => (
-                    <div key={sport}>
-                      <h3 className="font-bold">{sport}</h3>
-                      <div className="mt-2 space-y-2">
-                        {buildLightLogs(activityLog)
-                          .filter((field) => field.sport === sport)
-                          .map((field) => (
-                            <div
-                              key={`${field.sport}-${field.label}`}
-                              className="grid grid-cols-[3rem_1fr] gap-2 text-sm"
-                            >
-                              <p className="font-bold">{field.label}</p>
-                              <p>
-                                {field.on || field.off
-                                  ? `${field.on || "____"}-${field.off || "____"}`
-                                  : ""}
-                              </p>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <h2 className="text-xl font-bold">Shift Timeline</h2>
-                <div className="mt-3 space-y-1 text-sm">
-                  {activityLog.filter(
-                    (entry) =>
-                      entry.category !== "lights" && entry.category !== "report",
-                  ).length === 0 ? (
-                    <p>No activity logged.</p>
-                  ) : (
-                    activityLog
-                      .filter(
-                        (entry) =>
-                          entry.category !== "lights" &&
-                          entry.category !== "report",
-                      )
-                      .slice()
-                      .reverse()
-                      .map((entry) => (
-                        <p key={entry.id}>{formatActivityEntry(entry)}</p>
-                      ))
-                  )}
-                </div>
-              </section>
-
-              <section>
-                <h2 className="text-xl font-bold">Notes</h2>
-                <div className="mt-2 space-y-1 text-sm">
-                  {reportNotes.length === 0 ? (
-                    <p />
-                  ) : (
-                    reportNotes.map((note, index) => (
-                      <p key={`${note}-${index}`}>{note}</p>
-                    ))
-                  )}
-                </div>
-              </section>
-
-              {reportPhotos.length > 0 ? (
-                <section>
-                  <h2 className="text-xl font-bold">Photos</h2>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    {reportPhotos.map((photo) => (
-                      <figure key={photo.id} className="break-inside-avoid">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={photo.dataUrl}
-                          alt=""
-                          className="max-h-64 w-full object-contain"
-                        />
-                        <figcaption className="mt-1 text-xs">
-                          {timeFormatter.format(new Date(photo.timestamp))}
-                        </figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-            </div>
-          ) : lightReportSnapshot ? (
-            <div className="space-y-5">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Park Patrol
-                </p>
-                <h2 className="mt-1 text-2xl font-bold">
-                  Weekly Light Report
-                </h2>
-                <p className="mt-1">{lightReportSnapshot.rangeLabel}</p>
-              </div>
-
-              <table className="w-full table-fixed border-collapse text-[10px]">
-                <thead>
-                  <tr>
-                    <th className="w-[12%] border border-slate-300 p-1 text-left align-middle">
-                      Field
-                    </th>
-                    {lightReportSnapshot.dayLabels.map((dayLabel) => (
-                      <th
-                        key={dayLabel}
-                        className="border border-slate-300 p-1 text-center align-middle"
-                      >
-                        {dayLabel}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lightReportSnapshot.weeklyRows.map((row) => (
-                    <tr key={`${row.sport}-${row.label}`}>
-                      <td className="border border-slate-300 p-1 align-middle font-bold">
-                        {row.sport} {row.label}
-                      </td>
-                      {row.days.map((day, index) => (
-                        <td
-                          key={`${row.label}-${lightReportSnapshot.dayLabels[index]}`}
-                          className="h-9 overflow-hidden break-words border border-slate-300 p-1 text-center align-middle text-[10px] leading-tight"
-                        >
-                          {day.on ? `${day.on}-${day.off || ""}` : ""}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {isNoteOpen ? (
         <div className="fixed inset-0 z-30 flex items-end bg-black/40 p-4 no-print">
