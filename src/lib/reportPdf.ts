@@ -279,21 +279,15 @@ function addPhotos(doc: jsPDF, photos: ReportPhoto[], y: number, title: string, 
 
   let cursorY = sectionTitle(doc, "Attached Photos", y);
 
-  photos.forEach((photo, index) => {
-    cursorY = ensureSpace(doc, cursorY, 190, title, subtitle);
-    doc.setDrawColor(...ruleColor);
-    doc.roundedRect(marginX, cursorY, pageWidth - marginX * 2, 180, 4, 4, "S");
+  photos.forEach((photo) => {
+    cursorY = ensureSpace(doc, cursorY, 165, title, subtitle);
     try {
-      doc.addImage(photo.dataUrl, "JPEG", marginX + 10, cursorY + 10, 180, 135);
+      doc.addImage(photo.dataUrl, "JPEG", marginX, cursorY, 220, 165);
     } catch {
       setText(doc, 9);
-      doc.text("Photo could not be embedded.", marginX + 12, cursorY + 24);
+      doc.text("Photo could not be embedded.", marginX, cursorY + 18);
     }
-    setText(doc, 8, "bold");
-    doc.text(`Photo ${index + 1}`, marginX + 205, cursorY + 26);
-    setText(doc, 8);
-    doc.text(new Date(photo.timestamp).toLocaleString("en-CA"), marginX + 205, cursorY + 42);
-    cursorY += 194;
+    cursorY += 181;
   });
 
   return cursorY;
